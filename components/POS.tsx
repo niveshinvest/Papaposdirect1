@@ -1,0 +1,824 @@
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { MenuItem, Table, OrderType, Invoice, CartItem, PaymentMode, Modifier } from '../types';
+import { 
+  ShoppingCart, Search, Trash2, Plus, Minus, Receipt, 
+  X, Utensils, Layers, Info, WifiOff, Wifi,
+  MonitorPlay, ChevronRight, Check, AlertCircle, Loader2,
+  ChevronLeft, ShoppingBag, Printer, QrCode, User, CreditCard, Wallet, Banknote,
+  Settings2
+} from 'lucide-react';
+import { salesService } from '../services/salesService';
+import { kitchenService } from '../services/kitchenService';
+import { sessionService } from '../services/sessionService';
+import { paymentService } from '../services/supabaseService';
+import { db } from '../services/db';
+import { useLiveQuery } from 'dexie-react-hooks';
+
+// --- Price Integrity Contract ---
+interface ValidatedCartItem {
+  id: string;
+  name: string;
+  unit_price: number; // Sanitized, base price
+  quantity: number;
+  tax_percentage: number;
+  price_includes_tax: boolean;
+  hsn_code: string;
+  total_price: number; // Derived: (unit_price + modifiers_sum) * quantity
+  selected_modifiers?: Modifier[];
+}
+
+const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ org, activeOutlet, currentUser }) => {
+  // UI State
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [orderType, setOrderType] = useState<OrderType>('DINE_IN');
+  const [selectedTable, setSelectedTable] = useState<Table | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [showTableSelector, setShowTableSelector] = useState(false);
+  const [showPaymentPicker, setShowPaymentPicker] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
+  const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>('80mm');
+  const [modifierItem, setModifierItem] = useState<any | null>(null);
+  const [tempSelectedModifiers, setTempSelectedModifiers] = useState<Modifier[]>([]);
+
+  const toggleModifier = (mod: Modifier) => {
+    setTempSelectedModifiers(prev => 
+      prev.find(m => m.id === mod.id) 
+        ? prev.filter(m => m.id !== mod.id) 
+        : [...prev, mod]
+    );
+  };
+  
+  // Payment State
+  const [paymentModes, setPaymentModes] = useState<PaymentMode[]>([]);
+  const [selectedMop, setSelectedMop] = useState<PaymentMode | null>(null);
+
+  // E-Invoice / Compliance State
+  const [buyerGstin, setBuyerGstin] = useState('');
+  const [buyerName, setBuyerName] = useState('');
+  const [buyerState, setBuyerState] = useState(activeOutlet?.gst_state_code || activeOutlet?.state_code || '27');
+  const [lastInvoice, setLastInvoice] = useState<any>(null);
+
+  // --- Cart State ---
+  const [cart, setCart] = useState<ValidatedCartItem[]>([]);
+
+  // Offline-First Data (Dexie)
+  const menuItems = useLiveQuery(() => 
+    activeOutlet ? db.menu.where('outlet_id').equals(activeOutlet.id).toArray() : Promise.resolve([]), 
+    [activeOutlet?.id]
+  ) || [];
+
+  const categories = useLiveQuery(() => 
+    activeOutlet ? db.categories.where('outlet_id').equals(activeOutlet.id).toArray() : Promise.resolve([]),
+    [activeOutlet?.id]
+  ) || [];
+
+  const tables = useLiveQuery(() => 
+    activeOutlet ? db.floor_tables.where('outlet_id').equals(activeOutlet.id).toArray() : Promise.resolve([]),
+    [activeOutlet?.id]
+  ) || [];
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    if (orderType !== 'DINE_IN') setSelectedTable(null);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [orderType]);
+
+  useEffect(() => {
+    if (activeOutlet) {
+      loadPaymentModes();
+    }
+  }, [activeOutlet]);
+
+  const loadPaymentModes = async () => {
+    try {
+      const modes = await paymentService.fetchActiveModes(activeOutlet.id);
+      setPaymentModes(modes);
+      const defaultMode = modes.find(m => m.is_default);
+      if (defaultMode) setSelectedMop(defaultMode);
+      else if (modes.length > 0) setSelectedMop(modes[0]);
+    } catch (e) {
+      console.error("MOP Load Failure:", e);
+    }
+  };
+
+  const addToCart = (item: any, selectedMods: Modifier[] = []) => {
+    const rawPrice = item.base_price ?? item.price;
+    const sanitizedPrice = Number(
+      typeof rawPrice === 'string'
+        ? rawPrice.replace(/[^\d.]/g, '')
+        : rawPrice
+    );
+
+    if (!Number.isFinite(sanitizedPrice) || sanitizedPrice <= 0) {
+      setPriceError(`Configuration Error: "${item.name}" has an invalid price.`);
+      setTimeout(() => setPriceError(null), 3000);
+      return;
+    }
+
+    // If item has modifiers and none are passed, open modal
+    if (item.modifiers && item.modifiers.length > 0 && selectedMods.length === 0 && !modifierItem) {
+      setModifierItem(item);
+      setTempSelectedModifiers([]);
+      return;
+    }
+
+    const modifierPriceSum = selectedMods.reduce( 
+      (sum, mod) => sum + Number(mod.price || 0),
+      0
+    );
+
+
+    const effectiveUnitPrice = sanitizedPrice + modifierPriceSum;
+
+    setCart(prev => {
+      // For items with modifiers, we treat them as unique entries if modifiers differ
+      const existing = prev.find(i => 
+        i.id === item.id && 
+        JSON.stringify(i.selected_modifiers || []) === JSON.stringify(selectedMods)
+      );
+
+      if (existing) {
+        return prev.map(i => (i.id === item.id && JSON.stringify(i.selected_modifiers || []) === JSON.stringify(selectedMods))
+          ? { ...i, quantity: i.quantity + 1, total_price: effectiveUnitPrice * (i.quantity + 1) } 
+          : i
+        );
+      }
+
+      const newItem: ValidatedCartItem = {
+        id: item.id,
+        name: item.name,
+        unit_price: sanitizedPrice,
+        quantity: 1,
+        tax_percentage: Number(item.tax_percentage ?? item.gst_rate ?? 5),
+        price_includes_tax: Boolean(item.price_includes_tax ?? item.is_tax_inclusive ?? false),
+        hsn_code: String(item.hsn_code || '9963'),
+        total_price: effectiveUnitPrice,
+        selected_modifiers: selectedMods.length > 0 ? selectedMods : undefined
+      };
+      return [...prev, newItem];
+    });
+    
+    setModifierItem(null);
+    setTempSelectedModifiers([]);
+    if (window.innerWidth > 1024 && !isCartOpen) setIsCartOpen(true);
+  };
+
+  const updateQuantity = (id: string, delta: number, modifiers?: Modifier[]) => {
+    setCart(prev => prev.map(item => {
+      const match = item.id === id && JSON.stringify(item.selected_modifiers || []) === JSON.stringify(modifiers || []);
+      if (match) {
+        const newQty = Math.max(0, item.quantity + delta);
+        const modifierPriceSum = (item.selected_modifiers || []).reduce((sum, mod) => sum + Number(mod.price || 0), 0);
+        const effectiveUnitPrice = item.unit_price + modifierPriceSum;
+        return { ...item, quantity: newQty, total_price: effectiveUnitPrice * newQty };
+      }
+      return item;
+    }).filter(i => i.quantity > 0));
+  };
+
+  const validateCompliance = () => {
+    if (activeOutlet?.gst_registered && !activeOutlet?.gst_number) {
+      alert("Error: Outlet is GST registered but GSTIN is missing. Compliance blocked.");
+      return false;
+    }
+    if (!selectedMop) {
+      alert("Error: No Payment Mode selected. Please configure a default in settings.");
+      return false;
+    }
+    if (buyerGstin) {
+      const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+      if (!gstinRegex.test(buyerGstin)) {
+        alert("Error: Invalid Buyer GSTIN format.");
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const totals = useMemo(() => {
+    const outletState = activeOutlet?.gst_state_code || activeOutlet?.state_code || '27';
+    const destState = buyerState || outletState;
+    const gstRegistered = activeOutlet?.gst_registered ?? false;
+    
+    const processed = cart.map(item => {
+    return salesService.calculateItemGst(
+    {
+      ...item,
+      price: item.unit_price,          // 🔑 KEY FIX
+      base_price: item.unit_price,     // 🔑 BACKWARD COMPAT
+    } as any,
+    item.quantity,
+    outletState,
+    destState,
+    gstRegistered,
+    item.selected_modifiers
+  );
+});
+    const subtotal = processed.reduce((acc, i) => acc + (i.taxable_value || 0), 0);
+    const cgst = processed.reduce((acc, i) => acc + (i.cgst_amount || 0), 0);
+    const sgst = processed.reduce((acc, i) => acc + (i.sgst_amount || 0), 0);
+    const igst = processed.reduce((acc, i) => acc + (i.igst_amount || 0), 0);
+    const totalTax = cgst + sgst + igst;
+    
+    // Grouped tax for breakup view
+    const taxBreakup: Record<number, { taxable: number, cgst: number, sgst: number, igst: number, totalTax: number }> = {};
+    processed.forEach(i => {
+      const rate = i.tax_percentage;
+      if (!taxBreakup[rate]) taxBreakup[rate] = { taxable: 0, cgst: 0, sgst: 0, igst: 0, totalTax: 0 };
+      taxBreakup[rate].taxable += i.taxable_value;
+      taxBreakup[rate].cgst += i.cgst_amount;
+      taxBreakup[rate].sgst += i.sgst_amount;
+      taxBreakup[rate].igst += i.igst_amount;
+      taxBreakup[rate].totalTax += (i.cgst_amount + i.sgst_amount + i.igst_amount);
+    });
+
+    const rawGrandTotal = subtotal + totalTax;
+    const grandTotal = Math.round(rawGrandTotal);
+    const roundOff = grandTotal - rawGrandTotal;
+    const safeNum = (n: number) => isNaN(n) ? 0 : n;
+
+    return { 
+      subtotal: safeNum(subtotal), 
+      cgst: safeNum(cgst), 
+      sgst: safeNum(sgst), 
+      igst: safeNum(igst),
+      totalTax: safeNum(totalTax), 
+      grandTotal: safeNum(grandTotal), 
+      roundOff: safeNum(roundOff),
+      itemCount: cart.reduce((acc, i) => acc + i.quantity, 0),
+      taxBreakup,
+      processedItems: processed
+    };
+  }, [cart, activeOutlet, buyerState]);
+
+  const handlePrint = () => {
+    const printEl = document.getElementById('print-area');
+    if (printEl) {
+      window.print();
+      return true;
+    }
+    return false;
+  };
+
+  const handleFinalizeAndPrint = async () => {
+    if (!activeOutlet || !currentUser) return alert("System state mismatch.");
+    if (orderType === 'DINE_IN' && !selectedTable) return alert("Select a table.");
+    if (cart.length === 0) return alert("Cart is empty.");
+    if (!validateCompliance()) return;
+
+    setIsProcessing(true);
+    try {
+      const ctx = { company_id: currentUser.company_id, outlet_id: activeOutlet.id, staff_user_id: currentUser.id };
+      const invNo = `INV-${activeOutlet.short_code || 'POS'}-${Date.now()}`;
+      const invDate = new Date().toISOString();
+      const qrPayload = activeOutlet.gst_registered ? `${activeOutlet.gst_number}|${invNo}|${invDate.split('T')[0]}|${totals.grandTotal}|${totals.totalTax.toFixed(2)}|${buyerGstin || 'NA'}` : null;
+      
+      const orderData = { 
+        tableId: selectedTable?.name || orderType, 
+        orderType: orderType, 
+        items: totals.processedItems, 
+        subtotal: totals.subtotal, 
+        cgst: totals.cgst, 
+        sgst: totals.sgst, 
+        total: totals.grandTotal, 
+        status: 'completed' as const, 
+        timestamp: new Date() 
+      };
+
+      const order = await db.createSyncableRecord(db.orders, orderData, ctx);
+      
+      const invoiceData: Invoice = { 
+        id: crypto.randomUUID(),
+        company_id: currentUser.company_id,
+        outlet_id: activeOutlet.id,
+        invoice_number: invNo, 
+        invoice_date: invDate, 
+        order_id: order.id, 
+        seller_gstin: activeOutlet.gst_number || 'UNREGISTERED', 
+        seller_legal_name: org.name, 
+        seller_trade_name: activeOutlet.name, 
+        seller_state_code: activeOutlet.gst_state_code || activeOutlet.state_code || '27', 
+        buyer_name: buyerName || 'Counter Customer', 
+        buyer_gstin: buyerGstin || null, 
+        buyer_state_code: buyerState, 
+        place_of_supply: buyerState, 
+        invoice_type: buyerGstin ? 'B2B' : 'B2C', 
+        billing_state_code: buyerState,
+        outlet_state_code: activeOutlet.gst_state_code || activeOutlet.state_code || '27',
+        taxable_value: totals.subtotal, 
+        subtotal: totals.subtotal,
+        cgst_total: totals.cgst, 
+        sgst_total: totals.sgst, 
+        igst_total: totals.igst, 
+        total_tax: totals.totalTax, 
+        round_off: totals.roundOff, 
+        grand_total: totals.grandTotal, 
+        payment_method: selectedMop?.name || 'Cash', 
+        payment_mode_id: selectedMop?.id,
+        payment_mode_name: selectedMop?.name,
+        finalized_by_user_id: currentUser.id,
+        finalized_at: invDate,
+        qr_payload: qrPayload || undefined, 
+        irp_status: 'NOT_GENERATED',
+        printed: true
+      };
+
+      const invoice = await db.createSyncableRecord(db.invoices, invoiceData, ctx);
+      setLastInvoice(invoice);
+
+      // Trigger Print using standard browser/hardware bridge
+      setTimeout(() => {
+        const printSuccess = handlePrint();
+        if (!printSuccess) {
+          alert("Bill finalized but printing failed. Check printer connection.");
+        }
+      }, 300);
+
+      if (isOnline) {
+        await kitchenService.createTicket({ 
+          order_id: order.id, 
+          outlet_id: activeOutlet.id, 
+          table_name: orderData.tableId, 
+          items: cart.map(i => ({ name: i.name, quantity: i.quantity, notes: '' })), 
+        });
+      }
+
+      setCart([]);
+      setSelectedTable(null);
+      setBuyerGstin('');
+      setBuyerName('');
+      setIsCartOpen(false);
+      
+    } catch (e: any) {
+      alert(`Finalization failed: ${e.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const getMopIcon = (type: string) => {
+    switch (type) {
+      case 'CASH': return <Banknote size={16} />;
+      case 'CARD': return <CreditCard size={16} />;
+      case 'DIGITAL': return <Wallet size={16} />;
+      default: return <Receipt size={16} />;
+    }
+  };
+
+  const filteredItems = menuItems.filter(item => 
+    item.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+    (selectedCategory === 'All' || item.category === selectedCategory)
+  );
+
+  return (
+    <div className="relative flex flex-col h-full bg-slate-50 overflow-hidden print:p-0 print:bg-white">
+      <style>{`
+        @media print {
+          @page { margin: 0; }
+          body { margin: 0; padding: 0; background: #fff; }
+          body * { visibility: hidden; }
+          #print-area, #print-area * { visibility: visible; }
+          #print-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: ${paperWidth === '80mm' ? '300px' : '220px'};
+            padding: 5px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            color: #000;
+            background: #fff;
+            line-height: 1.2;
+          }
+          .no-print { display: none !important; }
+          .dotted-line { border-bottom: 1px dotted #000; margin: 5px 0; width: 100%; }
+          .center { text-align: center; }
+          .bold { font-weight: bold; }
+          .large { font-size: 16px; }
+          .right { text-align: right; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { padding: 2px 0; text-align: left; vertical-align: top; }
+        }
+      `}</style>
+      
+      {/* Header / Nav */}
+      <div className="shrink-0 bg-white border-b px-6 py-4 space-y-4 no-print">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex bg-slate-100 p-1 rounded-2xl border shadow-inner shrink-0">
+             {['DINE_IN', 'TAKEAWAY', 'DELIVERY'].map(type => (
+               <button key={type} onClick={() => setOrderType(type as OrderType)} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${orderType === type ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>{type.replace('_', '-')}</button>
+             ))}
+          </div>
+          {orderType === 'DINE_IN' && (
+            <button onClick={() => setShowTableSelector(true)} className={`flex items-center gap-3 px-6 py-2 rounded-2xl border-2 transition-all shrink-0 ${selectedTable ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'bg-white border-slate-200 text-slate-400'}`}>
+              <Utensils size={16} /><span className="text-[10px] font-black uppercase tracking-widest">{selectedTable ? `Table ${selectedTable.name}` : 'Select Table'}</span>
+            </button>
+          )}
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input type="text" placeholder="Quick search menu..." className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none text-sm font-bold shadow-sm" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          </div>
+          <div className="flex bg-indigo-50 p-1 rounded-2xl border border-indigo-100">
+            {['80mm', '58mm'].map(w => (
+               <button key={w} onClick={() => setPaperWidth(w as any)} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${paperWidth === w ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-400'}`}>{w}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          {['All', ...categories.map(c => c.name)].map(cat => (
+            <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-6 py-2 rounded-full whitespace-nowrap font-black text-[10px] uppercase transition-all border-2 ${selectedCategory === cat ? 'bg-slate-900 border-slate-900 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'}`}>{cat}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Menu Grid */}
+      <div className="flex-1 overflow-y-auto p-6 pb-32 scrollbar-hide no-print">
+        {priceError && <div className="mb-6 bg-rose-50 border border-rose-100 p-4 rounded-2xl flex items-center gap-3 text-rose-600 animate-in fade-in slide-in-from-top-4"><AlertCircle size={20} /><p className="font-bold text-sm">{priceError}</p></div>}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+          {filteredItems.map(item => (
+            <div key={item.id} onClick={() => addToCart(item)} className="bg-white rounded-[32px] overflow-hidden border border-slate-100 hover:border-orange-500 cursor-pointer active:scale-95 transition-all shadow-sm group hover:shadow-xl">
+              <div className="h-32 bg-slate-50 relative overflow-hidden">
+                {item.image_url || item.image ? <img src={item.image_url || item.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt={item.name} /> : <div className="w-full h-full flex items-center justify-center text-slate-200"><Utensils size={32} /></div>}
+                <div className="absolute top-3 right-3 bg-white/95 px-3 py-1.5 rounded-xl text-[10px] font-black text-orange-600 shadow-xl border border-white/50">₹{item.base_price ?? item.price}</div>
+              </div>
+              <div className="p-5">
+                <h4 className="font-black text-sm text-slate-800 leading-tight h-10 line-clamp-2">{item.name}</h4>
+                <div className="flex items-center justify-between mt-3">
+                   <p className="text-[9px] text-slate-400 font-black uppercase tracking-tighter">{item.menu_categories?.name || item.category}</p>
+                   <div className="p-1.5 bg-slate-50 text-slate-300 rounded-lg group-hover:bg-orange-50 group-hover:text-orange-500 transition-colors"><Plus size={14} /></div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Floating CTA */}
+      <button onClick={() => setIsCartOpen(true)} className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[400] flex items-center gap-4 bg-slate-900 text-white pl-6 pr-4 py-4 rounded-[32px] shadow-2xl hover:scale-105 active:scale-95 transition-all group no-print ${cart.length === 0 ? 'translate-y-32' : ''}`}>
+        <div className="flex flex-col items-start leading-none"><span className="text-[9px] font-black uppercase tracking-widest text-slate-500">{totals.itemCount} Items</span><span className="text-xl font-black text-orange-500">₹{totals.grandTotal}</span></div>
+        <div className="w-12 h-12 bg-orange-500 rounded-2xl flex items-center justify-center shadow-lg group-hover:bg-orange-400 transition-colors"><ShoppingCart size={20} /></div>
+      </button>
+
+      {/* Sidebar Cart */}
+      <div className={`fixed inset-y-0 right-0 z-[1000] w-full md:w-[420px] bg-white shadow-[0_0_80px_rgba(0,0,0,0.15)] flex flex-col transition-transform duration-500 ease-in-out no-print ${isCartOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="p-8 border-b flex justify-between items-center shrink-0">
+           <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-orange-500 rounded-[22px] flex items-center justify-center text-white shadow-xl"><ShoppingBag size={28} /></div>
+              <div><h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none">Checkout</h3><p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mt-1.5">{orderType} • {selectedTable?.name || 'Quick Sale'}</p></div>
+           </div>
+           <button onClick={() => setIsCartOpen(false)} className="p-4 bg-slate-50 hover:bg-slate-100 rounded-full text-slate-400 transition-all"><ChevronRight size={24} /></button>
+        </div>
+
+        {/* PAYMENT MODE BAR (CRITICAL) */}
+        <div className="px-8 py-4 bg-slate-50 border-b flex items-center justify-between">
+           <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+                 {getMopIcon(selectedMop?.type || 'CASH')}
+              </div>
+              <div>
+                 <p className="text-[9px] font-black uppercase text-slate-400 leading-none mb-1">Pay Via</p>
+                 <p className="font-black text-slate-900 text-sm leading-none">{selectedMop?.name || 'Select Mode'}</p>
+              </div>
+           </div>
+           <button 
+             onClick={() => setShowPaymentPicker(true)}
+             className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-black text-[9px] uppercase tracking-widest text-indigo-600 shadow-sm hover:bg-indigo-50 transition-all"
+           >
+              Change
+           </button>
+        </div>
+
+        <div className="px-8 py-6 bg-white border-b space-y-4">
+           <div className="flex items-center gap-2 mb-2"><User size={16} className="text-indigo-600" /><span className="text-[10px] font-black uppercase tracking-widest text-slate-800">Compliance Metadata (B2B)</span></div>
+           <div className="grid grid-cols-1 gap-3">
+              <input placeholder="Buyer GSTIN (Optional)" className="w-full px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-500" value={buyerGstin} onChange={e => setBuyerGstin(e.target.value.toUpperCase())} />
+              {buyerGstin && <input placeholder="Buyer Legal Name" className="w-full px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-1 focus:ring-indigo-500" value={buyerName} onChange={e => setBuyerName(e.target.value)} />}
+           </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide">
+           {cart.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-30"><Utensils size={64} className="text-slate-300" /><p className="font-black text-xs uppercase tracking-widest">Cart is Empty</p></div> : cart.map((item, idx) => (
+             <div key={`${item.id}-${idx}`} className="flex justify-between items-start animate-in slide-in-from-right-4 duration-300">
+                <div className="flex-1 min-w-0 pr-4">
+                   <h5 className="font-black text-sm text-slate-800 truncate">{item.name}</h5>
+                   {item.selected_modifiers && item.selected_modifiers.length > 0 && (
+                     <p className="text-[10px] font-bold text-orange-500 uppercase tracking-widest mt-1">
+                       + {item.selected_modifiers.map(m => m.name).join(', ')}
+                     </p>
+                   )}
+                   <p className="text-[10px] font-black text-slate-400 uppercase mt-1">
+                      ₹{item.unit_price + (item.selected_modifiers || []).reduce((s, m) => s + m.price, 0)} @ {item.tax_percentage}% GST 
+                      {item.price_includes_tax ? <span className="ml-1 text-emerald-600">(Incl)</span> : <span className="ml-1 text-orange-600">(Excl)</span>}
+                   </p>
+                </div>
+                <div className="flex items-center gap-5">
+                   <div className="flex items-center bg-slate-100 rounded-2xl p-1 shadow-inner">
+                     <button onClick={() => updateQuantity(item.id, -1, item.selected_modifiers)} className="p-2 hover:bg-white rounded-xl transition-all"><Minus size={14} /></button>
+                     <span className="w-10 text-center font-black text-sm">{item.quantity}</span>
+                     <button onClick={() => updateQuantity(item.id, 1, item.selected_modifiers)} className="p-2 hover:bg-white rounded-xl transition-all"><Plus size={14} /></button>
+                   </div>
+                   <div className="w-20 text-right"><span className="font-black text-sm text-slate-900">₹{Number(item.total_price || 0).toFixed(0)}</span></div>
+                </div>
+             </div>
+           ))}
+        </div>
+        <div className="p-10 bg-slate-900 text-white space-y-8 rounded-t-[56px] shadow-2xl shrink-0">
+           <div className="space-y-4">
+              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500"><span>Taxable Value</span><span className="text-slate-300">₹{totals.subtotal.toFixed(2)}</span></div>
+              
+              {activeOutlet?.gst_registered && Object.entries(totals.taxBreakup).map(([rate, vals]: [string, any]) => (
+                 <div key={rate} className="space-y-1">
+                    {vals.igst > 0 ? (
+                       <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 italic">
+                          <span>IGST @ {rate}%</span><span className="text-slate-300">₹{vals.igst.toFixed(2)}</span>
+                       </div>
+                    ) : (
+                       <>
+                          <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 italic">
+                             <span>CGST @ {Number(rate)/2}%</span><span className="text-slate-300">₹{vals.cgst.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 italic">
+                             <span>SGST @ {Number(rate)/2}%</span><span className="text-slate-300">₹{vals.sgst.toFixed(2)}</span>
+                          </div>
+                       </>
+                    )}
+                 </div>
+              ))}
+
+              {activeOutlet?.gst_registered && <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 pt-2 border-t border-white/5"><span>Total Tax Aggregates</span><span className="text-slate-300">₹{totals.totalTax.toFixed(2)}</span></div>}
+              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500"><span>Round-off</span><span className={totals.roundOff < 0 ? 'text-rose-400' : 'text-emerald-400'}>₹{totals.roundOff.toFixed(2)}</span></div>
+           </div>
+           <div className="flex justify-between items-end pt-8 border-t border-white/10">
+              <div><p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Grand Payable</p><span className="font-black text-5xl text-orange-500 tracking-tighter">₹{totals.grandTotal}</span></div>
+              <div className={`flex items-center gap-2 px-3 py-1 rounded-lg border ${isOnline ? 'border-emerald-500/20 text-emerald-500' : 'border-rose-500/20 text-rose-500'}`}>{isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}<span className="text-[9px] font-black uppercase">{isOnline ? 'Sync' : 'Local'}</span></div>
+           </div>
+           
+           <button 
+             onClick={handleFinalizeAndPrint} 
+             disabled={cart.length === 0 || isProcessing || !selectedMop} 
+             className="w-full py-6 bg-emerald-600 text-white rounded-[32px] font-black uppercase tracking-widest text-sm shadow-2xl shadow-emerald-900/40 flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-30 disabled:grayscale"
+           >
+              {isProcessing ? <Loader2 className="animate-spin" size={24} /> : (
+                <>
+                  <div className="p-2 bg-white/20 rounded-xl">
+                    <Printer size={20} />
+                  </div>
+                  FINALIZE & PRINT (₹{totals.grandTotal})
+                </>
+              )}
+           </button>
+        </div>
+      </div>
+
+      {/* Modifier Modal */}
+      {modifierItem && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
+           <div className="bg-white rounded-[48px] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+              <div className="p-10 bg-slate-900 text-white flex justify-between items-center">
+                 <div>
+                    <h3 className="text-2xl font-black tracking-tight uppercase">Customize Item</h3>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">{modifierItem.name}</p>
+                 </div>
+                 <button onClick={() => setModifierItem(null)} className="p-2 hover:bg-white/10 rounded-full transition-all"><X size={24} /></button>
+              </div>
+              <div className="p-10 space-y-8">
+                 <div className="space-y-4">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Available Modifiers</label>
+                    <div className="grid grid-cols-1 gap-3">
+                       {modifierItem.modifiers?.map((mod: Modifier) => (
+                         <button 
+                           key={mod.id}
+                           onClick={() => toggleModifier(mod)}
+                           className={`flex items-center justify-between p-5 rounded-2xl border-2 transition-all ${
+                             tempSelectedModifiers.find(m => m.id === mod.id)
+                               ? 'border-orange-500 bg-orange-50'
+                               : 'border-slate-100 bg-white hover:border-slate-200'
+                           }`}
+                         >
+                            <div className="flex items-center gap-4">
+                               <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
+                                 tempSelectedModifiers.find(m => m.id === mod.id)
+                                   ? 'bg-orange-500 border-orange-500 text-white'
+                                   : 'border-slate-200'
+                               }`}>
+                                  {tempSelectedModifiers.find(m => m.id === mod.id) && <Check size={14} />}
+                               </div>
+                               <span className="font-black text-sm text-slate-800 uppercase">{mod.name}</span>
+                            </div>
+                            <span className="font-black text-xs text-slate-400">
+                               {mod.price > 0 ? `+ ₹${mod.price}` : 'Free'}
+                            </span>
+                         </button>
+                       ))}
+                    </div>
+                 </div>
+                 <button 
+                   onClick={() => addToCart(modifierItem, tempSelectedModifiers)}
+                   className="w-full py-6 bg-slate-900 text-white rounded-[28px] font-black uppercase tracking-widest text-sm shadow-2xl"
+                 >
+                    Add to Order (₹{Number(modifierItem.base_price ?? modifierItem.price) + tempSelectedModifiers.reduce((s, m) => s + m.price, 0)})
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* PAYMENT MODE PICKER */}
+      {showPaymentPicker && (
+        <div className="fixed inset-0 z-[1500] flex items-center justify-center p-4 bg-slate-900/95 backdrop-blur-md">
+           <div className="bg-white rounded-[56px] w-full max-w-xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-300">
+              <div className="p-10 border-b bg-slate-50/50 flex justify-between items-center shrink-0">
+                 <div><h3 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Payment Mode</h3><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Select settlement channel</p></div>
+                 <button onClick={() => setShowPaymentPicker(false)} className="p-4 bg-white border border-slate-100 rounded-full text-slate-400 hover:text-slate-900 transition-all shadow-sm"><X size={28} /></button>
+              </div>
+              <div className="p-10 grid grid-cols-1 gap-4 overflow-y-auto max-h-[60vh]">
+                 {paymentModes.map(mop => (
+                   <button 
+                     key={mop.id} 
+                     onClick={() => { setSelectedMop(mop); setShowPaymentPicker(false); }} 
+                     className={`flex items-center justify-between p-6 rounded-3xl border-2 transition-all ${selectedMop?.id === mop.id ? 'bg-indigo-50 border-indigo-500 shadow-sm' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
+                   >
+                      <div className="flex items-center gap-4">
+                         <div className={`p-4 rounded-2xl ${selectedMop?.id === mop.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                            {getMopIcon(mop.type)}
+                         </div>
+                         <div className="text-left">
+                            <p className="font-black text-slate-900">{mop.name}</p>
+                            {mop.is_default && <span className="text-[8px] font-black uppercase text-indigo-500 bg-indigo-100 px-2 py-0.5 rounded">Default Mode</span>}
+                         </div>
+                      </div>
+                      {selectedMop?.id === mop.id && <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white"><Check size={18} /></div>}
+                   </button>
+                 ))}
+              </div>
+              <div className="p-10 border-t bg-slate-50/50 flex justify-end">
+                 <button onClick={() => setShowPaymentPicker(false)} className="px-12 py-5 bg-slate-900 text-white rounded-[24px] font-black uppercase tracking-widest text-xs">Dismiss</button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* THERMAL PRINT AREA */}
+      <div id="print-area" className="hidden">
+        <div className="center">
+          <div className="bold large uppercase">{org?.name || 'PapaPos Restaurant'}</div>
+          <div>{activeOutlet?.name}</div>
+          <div>{activeOutlet?.address || activeOutlet?.location}</div>
+          <div>{activeOutlet?.city} - {activeOutlet?.pincode}</div>
+          {activeOutlet?.gst_registered && <div className="bold">GSTIN: {activeOutlet?.gst_number || 'UNREGISTERED'}</div>}
+          {!activeOutlet?.gst_registered && <div className="bold">NON-GST INVOICE</div>}
+          {activeOutlet?.phoneNumber && <div>Ph: {activeOutlet.phoneNumber}</div>}
+        </div>
+
+        <div className="dotted-line"></div>
+
+        <div>
+          <div>INV: {lastInvoice?.invoice_number || 'DRAFT'}</div>
+          <div>DATE: {new Date(lastInvoice?.invoice_date || Date.now()).toLocaleString()}</div>
+          <div>MODE: {lastInvoice?.payment_method || 'CASH'}</div>
+          <div>STAFF: {currentUser?.full_name || 'Counter'}</div>
+          <div>TID: {sessionService.getTerminalId().slice(-8).toUpperCase()}</div>
+        </div>
+
+        <div className="dotted-line"></div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: '40%' }}>ITEM</th>
+              <th className="right" style={{ width: '10%' }}>QTY</th>
+              <th className="right" style={{ width: '25%' }}>RATE</th>
+              <th className="right" style={{ width: '25%' }}>AMT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(lastInvoice?.items || totals.processedItems).map((item: any) => (
+              <tr key={item.id}>
+                <td>
+                  {item.name} {activeOutlet?.gst_registered && <span style={{ fontSize: '8px' }}>({item.tax_percentage}%)</span>}
+                  {item.selected_modifiers && item.selected_modifiers.length > 0 && (
+                    <div style={{ fontSize: '8px', fontStyle: 'italic', color: '#666' }}>
+                      + {item.selected_modifiers.map((m: any) => m.name).join(', ')}
+                    </div>
+                  )}
+                </td>
+                <td className="right">{item.quantity}</td>
+                <td className="right">{item.price ?? item.unit_price}</td>
+                <td className="right">{(item.total_amount ?? item.total_price ?? 0).toFixed(0)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="dotted-line"></div>
+
+        <div className="right">
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>{activeOutlet?.gst_registered ? 'SUBTOTAL:' : 'TOTAL:'}</span>
+            <span>{totals.subtotal.toFixed(2)}</span>
+          </div>
+          
+          {activeOutlet?.gst_registered && Object.entries(totals.taxBreakup).map(([rate, vals]: [string, any]) => (
+            <div key={rate}>
+               {vals.igst > 0 ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>IGST @ {rate}%:</span>
+                    <span>{vals.igst.toFixed(2)}</span>
+                  </div>
+               ) : (
+                 <>
+                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                     <span>CGST @ {Number(rate)/2}%:</span>
+                     <span>{vals.cgst.toFixed(2)}</span>
+                   </div>
+                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                     <span>SGST @ {Number(rate)/2}%:</span>
+                     <span>{vals.sgst.toFixed(2)}</span>
+                   </div>
+                 </>
+               )}
+            </div>
+          ))}
+
+          {activeOutlet?.gst_registered && (
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>TOTAL TAX:</span>
+              <span>{totals.totalTax.toFixed(2)}</span>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>ROUND OFF:</span>
+            <span>{totals.roundOff.toFixed(2)}</span>
+          </div>
+
+          <div className="dotted-line"></div>
+
+          <div className="bold large" style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
+            <span>GRAND TOTAL:</span>
+            <span>₹{totals.grandTotal.toFixed(0)}</span>
+          </div>
+        </div>
+
+        <div className="dotted-line"></div>
+
+        {lastInvoice?.qr_payload && (
+          <div className="center" style={{ marginTop: '10px' }}>
+            <img 
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(lastInvoice.qr_payload)}`} 
+              alt="QR" 
+              style={{ width: '80px', height: '80px' }}
+            />
+            <div style={{ fontSize: '8px', marginTop: '4px' }}>Scan for Invoice Details</div>
+          </div>
+        )}
+
+        <div className="center" style={{ marginTop: '20px' }}>
+          <div className="bold">THANK YOU FOR YOUR VISIT!</div>
+          <div style={{ fontSize: '9px' }}>This is a computer generated receipt.</div>
+          <div style={{ fontSize: '8px', color: '#666', marginTop: '5px' }}>Powered by PapaPos Pro</div>
+        </div>
+        
+        <div style={{ height: '40px' }}></div>
+      </div>
+
+      {isCartOpen && <div onClick={() => setIsCartOpen(false)} className="md:hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[900] animate-in fade-in" />}
+      {showTableSelector && (
+        <div className="fixed inset-0 z-[1500] flex items-center justify-center p-4 bg-slate-900/95 backdrop-blur-md">
+           <div className="bg-white rounded-[56px] w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in duration-300">
+              <div className="p-10 border-b bg-slate-50/50 flex justify-between items-center shrink-0">
+                 <div><h3 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Floor Plan</h3><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Select an active table</p></div>
+                 <button onClick={() => setShowTableSelector(false)} className="p-4 bg-white border border-slate-100 rounded-full text-slate-400 hover:text-slate-900 transition-all shadow-sm"><X size={28} /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-12 pr-6">
+                 {tables.length === 0 ? <div className="h-96 flex flex-col items-center justify-center text-slate-300 gap-4"><div className="p-8 bg-slate-50 rounded-[40px] border border-dashed border-slate-200"><Utensils size={64} className="opacity-20" /></div><p className="font-black uppercase tracking-widest text-xs">No tables defined</p></div> : (
+                   <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-6">
+                      {tables.map(table => (
+                        <button key={table.id} onClick={() => { setSelectedTable(table); setShowTableSelector(false); }} className={`group aspect-square rounded-[40px] border-4 transition-all flex flex-col items-center justify-center gap-3 relative ${selectedTable?.id === table.id ? 'bg-indigo-600 border-indigo-200 scale-105 shadow-2xl' : table.status === 'occupied' ? 'bg-slate-50 border-slate-100 opacity-50' : 'bg-white border-slate-100 hover:border-orange-500 hover:scale-105 shadow-sm'}`}>
+                           <Utensils size={24} className={selectedTable?.id === table.id ? 'text-white' : 'text-slate-400 group-hover:text-orange-500'} />
+                           <div className="text-center"><span className={`font-black text-xl tracking-tight leading-none ${selectedTable?.id === table.id ? 'text-white' : 'text-slate-900'}`}>{table.name}</span><p className={`text-[10px] font-black uppercase tracking-widest mt-1 ${selectedTable?.id === table.id ? 'text-indigo-200' : 'text-slate-400'}`}>{table.capacity}pax</p></div>
+                        </button>
+                      ))}
+                   </div>
+                 )}
+              </div>
+              <div className="p-10 border-t bg-slate-50/50 flex justify-end"><button onClick={() => setShowTableSelector(false)} className="px-12 py-5 bg-slate-900 text-white rounded-[24px] font-black uppercase tracking-widest text-xs">Cancel</button></div>
+           </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default POS;

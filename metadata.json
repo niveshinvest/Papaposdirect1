@@ -1,0 +1,8 @@
+{
+  "name": "PapaPos",
+  "description": "A comprehensive restaurant management and POS platform featuring real-time billing, inventory tracking, and AI-powered business insights.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
