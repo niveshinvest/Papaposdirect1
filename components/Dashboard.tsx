@@ -21,7 +21,13 @@ const StatCard = ({ title, value, sub, icon: Icon, color, loading, isSensitive, 
       {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] flex items-center justify-center z-10"><Loader2 className="animate-spin text-indigo-300" size={24} /></div>}
       <div className="flex justify-between items-start relative z-10">
         <div className="space-y-2">
-          <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest leading-none">{title}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest leading-none">{title}</p>
+            <div className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded-full">
+              <span className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse"></span>
+              <span className="text-[8px] font-black uppercase tracking-tighter">Live</span>
+            </div>
+          </div>
           <h3 className="text-3xl font-black text-slate-800 tracking-tighter">{value}</h3>
           <p className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
              {sub}
@@ -128,7 +134,7 @@ const Dashboard: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletI
         <div>
           <div className="flex items-center gap-2 text-indigo-600 mb-1">
              <Cloud size={16} />
-             <span className="text-[10px] font-black uppercase tracking-widest">Live Operations Control</span>
+             <span className="text-[10px] font-black uppercase tracking-widest">Live Operations Control • {new Date().toLocaleTimeString()}</span>
           </div>
           <h2 className="text-4xl font-black text-slate-900 tracking-tighter leading-none">Insight Center</h2>
         </div>
@@ -153,7 +159,19 @@ const Dashboard: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletI
         <StatCard title="Orders" value={metrics?.order_count || '0'} sub="Traffic Signal" icon={Users} color="bg-indigo-600" loading={loading} role={role} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+      {!hasData && !loading ? (
+        <div className="bg-white rounded-[60px] border-4 border-dashed border-slate-100 p-20 text-center space-y-6">
+           <div className="w-24 h-24 bg-slate-50 rounded-[40px] flex items-center justify-center mx-auto">
+              <BarChart3 size={48} className="text-slate-200" />
+           </div>
+           <div>
+              <h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">No Sales Data Yet</h3>
+              <p className="text-slate-400 text-sm font-bold max-w-xs mx-auto mt-2 uppercase tracking-widest leading-relaxed">Transactions from your POS terminals will appear here in real-time once synced to cloud.</p>
+           </div>
+           <button onClick={initDashboard} className="px-10 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-all">Refresh Pipeline</button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
          <div className="lg:col-span-2 space-y-10">
             <div className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm space-y-10">
                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Hourly Sales Pattern</h3>
@@ -277,6 +295,7 @@ const Dashboard: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletI
             )}
          </div>
       </div>
+     )}
     </div>
   );
 };

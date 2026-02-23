@@ -212,6 +212,12 @@ export const syncService = {
         const { error } = await client.from('invoices').upsert({ ...invoice, sync_status: 'synced' });
         if (!error) await db.invoices.update(invoice.id, { sync_status: 'synced' });
       }
+
+      const pendingInvoiceItems = await db.invoice_items.where('sync_status').equals('pending').toArray();
+      for (const item of pendingInvoiceItems) {
+        const { error } = await client.from('invoice_items').upsert({ ...item, sync_status: 'synced' });
+        if (!error) await db.invoice_items.update(item.id, { sync_status: 'synced' });
+      }
     } catch (e) {
       console.warn("Transaction push deferred.");
     }

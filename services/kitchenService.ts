@@ -21,35 +21,19 @@ export const kitchenService = {
   },
 
   /**
-   * Transitions a kitchen order to a new state and logs the event.
+   * Transitions a kitchen order to a new state and logs the event via RPC.
    */
   async updateTicketStatus(ticketId: string, currentStatus: string, nextStatus: string) {
     const client = getSupabase();
     if (!client) return;
     
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error("Unauthorized");
-
-    // 1. Update ticket
-    const { error: updateErr } = await client
-      .from('kitchen_orders')
-      .update({ 
-        status: nextStatus,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', ticketId);
-      
-    if (updateErr) throw new Error(updateErr.message);
-
-    // 2. Log transition for efficiency metrics
-    const { error: logErr } = await client.from('kitchen_status_logs').insert({
-      kitchen_order_id: ticketId,
-      company_id: profile.company_id,
-      status_from: currentStatus,
-      status_to: nextStatus,
-      user_id: profile.id
+    const { error } = await client.rpc('update_kitchen_ticket_status', {
+      p_ticket_id: ticketId,
+      p_current_status: currentStatus,
+      p_next_status: nextStatus
     });
-    if (logErr) console.error("KDS log error:", logErr.message);
+      
+    if (error) throw new Error(error.message);
   },
 
   /**

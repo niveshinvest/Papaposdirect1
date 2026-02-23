@@ -327,7 +327,13 @@ const AIInsights: React.FC<AIInsightsProps> = ({ activeOutletId }) => {
               <div className="absolute inset-0 bg-gradient-to-br from-indigo-500 to-transparent opacity-20"></div>
            </div>
            <div>
-              <h2 className="text-4xl font-black tracking-tighter text-slate-900">Intelligence Hub</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-4xl font-black tracking-tighter text-slate-900">Intelligence Hub</h2>
+                <div className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                  <span className="text-[9px] font-black uppercase tracking-tighter">Live</span>
+                </div>
+              </div>
               <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-1">
                 {userRole === 'INVESTOR' ? 'Investor Analysis Active' : 'Owner Control Plane Active'}
               </p>

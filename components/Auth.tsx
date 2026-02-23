@@ -48,9 +48,9 @@ const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
         if (authError) throw authError;
         if (authData.user) {
           try {
-            await authService.createCompany(formData.restaurantName, authData.user);
+            const org = await authService.createCompany(formData.restaurantName, authData.user);
+            onAuthenticated(org, authData.user as any);
             setIsLoading(false);
-            navigate('/dashboard');
           } catch (initErr) {
             console.warn("Tenant auto-init deferred:", initErr);
             setIsLoading(false);
@@ -65,8 +65,11 @@ const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
 
         if (authError) throw authError;
         if (authData.user) {
+          const profile = await authService.getProfile();
+          if (profile) {
+            onAuthenticated(profile.companies, profile);
+          }
           setIsLoading(false);
-          navigate('/dashboard');
         }
       }
     } catch (err: any) {

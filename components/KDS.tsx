@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Clock, CheckCircle2, Flame, UtensilsCrossed, AlertCircle, ShoppingBag, Loader2, MonitorPlay } from 'lucide-react';
+import { Clock, CheckCircle2, Flame, UtensilsCrossed, AlertCircle, ShoppingBag, Loader2, MonitorPlay, Volume2, VolumeX } from 'lucide-react';
 import { kitchenService } from '../services/kitchenService';
 
 interface KDSProps {
@@ -11,6 +11,12 @@ const KDS: React.FC<KDSProps> = ({ activeOutletId }) => {
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
+  const [isMuted, setIsMuted] = useState(() => localStorage.getItem('kds_muted') === 'true');
+  const [lastProcessedTicketId, setLastProcessedTicketId] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('kds_muted', isMuted.toString());
+  }, [isMuted]);
 
   useEffect(() => {
     if (activeOutletId) {
@@ -20,10 +26,26 @@ const KDS: React.FC<KDSProps> = ({ activeOutletId }) => {
     }
   }, [activeOutletId]);
 
+  const playNotificationSound = () => {
+    if (isMuted) return;
+    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    audio.play().catch(e => console.warn("Audio playback blocked by browser policy. Interaction required."));
+  };
+
   const loadTickets = async () => {
     if (!activeOutletId) return;
     try {
       const data = await kitchenService.fetchActiveTickets(activeOutletId);
+      
+      // Sound logic: Trigger if we have a new ticket that wasn't there before
+      if (data.length > 0) {
+        const newestTicket = data[0]; // Assuming sorted by created_at desc
+        if (lastProcessedTicketId && newestTicket.id !== lastProcessedTicketId) {
+          playNotificationSound();
+        }
+        setLastProcessedTicketId(newestTicket.id);
+      }
+
       setTickets(data);
       setLastRefreshed(new Date());
     } catch (e) {
@@ -68,6 +90,12 @@ const KDS: React.FC<KDSProps> = ({ activeOutletId }) => {
             <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-1">Live Preparation Queue • {tickets.length} Active</p>
          </div>
          <div className="flex gap-4">
+            <button 
+              onClick={() => setIsMuted(!isMuted)}
+              className={`p-3 rounded-2xl border transition-all ${isMuted ? 'bg-rose-500/10 border-rose-500/20 text-rose-500' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'}`}
+            >
+               {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+            </button>
             <div className="bg-slate-800 border border-slate-700 px-6 py-3 rounded-2xl flex items-center gap-3">
                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Auto-refreshing: {lastRefreshed.toLocaleTimeString()}</span>
             </div>

@@ -41,6 +41,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
   const [showPaymentPicker, setShowPaymentPicker] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
   const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>('80mm');
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [modifierItem, setModifierItem] = useState<any | null>(null);
   const [tempSelectedModifiers, setTempSelectedModifiers] = useState<Modifier[]>([]);
 
@@ -334,15 +335,31 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
       };
 
       const invoice = await db.createSyncableRecord(db.invoices, invoiceData, ctx);
-      setLastInvoice(invoice);
+      
+      // SAVE INVOICE ITEMS TO DEXIE for cloud sync and local reporting
+      const invoiceItemRows = totals.processedItems.map(item => ({
+        id: crypto.randomUUID(),
+        invoice_id: invoice.id,
+        menu_item_id: item.id,
+        quantity: item.quantity,
+        selected_modifiers: item.selected_modifiers,
+        taxable_value: item.taxable_value,
+        cgst_amount: item.cgst_amount,
+        sgst_amount: item.sgst_amount,
+        igst_amount: item.igst_amount,
+        total_amount: item.total_amount,
+        company_id: currentUser.company_id,
+        outlet_id: activeOutlet.id,
+        sync_status: 'pending',
+        created_at: new Date()
+      }));
 
-      // Trigger Print using standard browser/hardware bridge
-      setTimeout(() => {
-        const printSuccess = handlePrint();
-        if (!printSuccess) {
-          alert("Bill finalized but printing failed. Check printer connection.");
-        }
-      }, 300);
+      await db.invoice_items.bulkPut(invoiceItemRows);
+
+      setLastInvoice({ ...invoice, items: totals.processedItems });
+      setShowPrintPreview(true);
+      setCart([]);
+      setSelectedTable(null);
 
       if (isOnline) {
         await kitchenService.createTicket({ 
@@ -669,8 +686,126 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
         </div>
       )}
 
+      {/* PRINT PREVIEW MODAL */}
+      {showPrintPreview && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-slate-900/95 backdrop-blur-md">
+           <div className="bg-white rounded-[56px] w-full max-w-lg shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-300">
+              <div className="p-8 border-b bg-slate-50/50 flex justify-between items-center">
+                 <div>
+                   <h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">Print Preview</h3>
+                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Verify invoice before physical print</p>
+                 </div>
+                 <div className="flex gap-2">
+                    <button 
+                      onClick={() => setPaperWidth(paperWidth === '80mm' ? '58mm' : '80mm')}
+                      className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase shadow-sm hover:bg-slate-50"
+                    >
+                      {paperWidth}
+                    </button>
+                    <button onClick={() => setShowPrintPreview(false)} className="p-3 bg-white border border-slate-100 rounded-full text-slate-400 hover:text-slate-900 transition-all shadow-sm"><X size={20} /></button>
+                 </div>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-8 bg-slate-100 flex justify-center">
+                 <div className={`bg-white shadow-lg p-6 ${paperWidth === '80mm' ? 'w-[300px]' : 'w-[220px]'} font-mono text-[10px] text-black`}>
+                    {/* This mirrors the print-area content for visual preview */}
+                    <div className="text-center mb-4">
+                      <div className="font-bold text-sm uppercase">{org?.name}</div>
+                      <div>{activeOutlet?.name}</div>
+                      <div className="text-[8px]">{activeOutlet?.address}</div>
+                      {activeOutlet?.gst_registered ? (
+                        <div className="font-bold mt-1">GSTIN: {activeOutlet?.gst_number}</div>
+                      ) : (
+                        <div className="font-bold mt-1">NON-GST INVOICE</div>
+                      )}
+                    </div>
+                    <div className="border-b border-dotted border-black my-2" />
+                    <div className="space-y-0.5">
+                      <div>INV: {lastInvoice?.invoice_number}</div>
+                      <div>DATE: {new Date(lastInvoice?.invoice_date).toLocaleString()}</div>
+                      <div>MODE: {lastInvoice?.payment_method}</div>
+                    </div>
+                    <div className="border-b border-dotted border-black my-2" />
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="border-b border-black">
+                          <th className="font-bold">ITEM</th>
+                          <th className="text-right font-bold">QTY</th>
+                          <th className="text-right font-bold">AMT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lastInvoice?.items?.map((item: any, i: number) => (
+                          <tr key={i}>
+                            <td className="py-1">
+                              {item.name}
+                              {item.selected_modifiers?.length > 0 && (
+                                <div className="text-[7px] italic text-slate-500">
+                                  + {item.selected_modifiers.map((m: any) => m.name).join(', ')}
+                                </div>
+                              )}
+                            </td>
+                            <td className="text-right py-1">{item.quantity}</td>
+                            <td className="text-right py-1">{item.total_amount?.toFixed(0)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="border-b border-dotted border-black my-2" />
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span>SUBTOTAL:</span>
+                        <span>{lastInvoice?.subtotal?.toFixed(2)}</span>
+                      </div>
+                      {lastInvoice?.cgst_total > 0 && (
+                        <>
+                          <div className="flex justify-between">
+                            <span>CGST:</span>
+                            <span>{lastInvoice?.cgst_total?.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>SGST:</span>
+                            <span>{lastInvoice?.sgst_total?.toFixed(2)}</span>
+                          </div>
+                        </>
+                      )}
+                      {lastInvoice?.igst_total > 0 && (
+                        <div className="flex justify-between">
+                          <span>IGST:</span>
+                          <span>{lastInvoice?.igst_total?.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-bold text-sm pt-1">
+                        <span>GRAND TOTAL:</span>
+                        <span>₹{lastInvoice?.grand_total?.toFixed(0)}</span>
+                      </div>
+                    </div>
+                    <div className="text-center mt-6 text-[8px] opacity-50">
+                      THANK YOU FOR YOUR VISIT
+                    </div>
+                 </div>
+              </div>
+
+              <div className="p-8 border-t bg-slate-50/50 flex gap-4">
+                 <button 
+                  onClick={() => setShowPrintPreview(false)}
+                  className="flex-1 py-5 bg-white border border-slate-200 text-slate-600 rounded-[24px] font-black uppercase tracking-widest text-xs"
+                 >
+                   Close
+                 </button>
+                 <button 
+                  onClick={() => { handlePrint(); setShowPrintPreview(false); }}
+                  className="flex-1 py-5 bg-indigo-600 text-white rounded-[24px] font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-200 flex items-center justify-center gap-3"
+                 >
+                   <Printer size={18} /> Print Invoice
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
       {/* THERMAL PRINT AREA */}
-      <div id="print-area" className="hidden">
+      <div id="print-area" className={`hidden ${paperWidth === '58mm' ? 'width-58mm' : ''}`}>
         <div className="center">
           <div className="bold large uppercase">{org?.name || 'PapaPos Restaurant'}</div>
           <div>{activeOutlet?.name}</div>

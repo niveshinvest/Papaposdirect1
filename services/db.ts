@@ -49,6 +49,7 @@ export const getDeviceId = (): string => {
 export class PapaPosDatabase extends Dexie {
   orders!: DexieTable<Order>;
   invoices!: DexieTable<Invoice>;
+  invoice_items!: DexieTable<any>;
   menu!: DexieTable<MenuItem>;
   inventory!: DexieTable<InventoryItem>;
   recipes!: DexieTable<Recipe>;
@@ -74,6 +75,7 @@ export class PapaPosDatabase extends Dexie {
     (this as any).version(1).stores({
       orders: 'id, company_id, outlet_id, [company_id+outlet_id], sync_status, status, timestamp',
       invoices: 'id, company_id, outlet_id, [company_id+outlet_id], sync_status, order_id, invoice_number',
+      invoice_items: 'id, invoice_id, sync_status',
       menu: 'id, company_id, outlet_id, [company_id+outlet_id], category, sync_status',
       inventory: 'id, company_id, outlet_id, [company_id+outlet_id], sync_status',
       recipes: 'id, company_id, sync_status',

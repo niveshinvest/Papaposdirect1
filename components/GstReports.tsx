@@ -22,13 +22,36 @@ const GstReports: React.FC<{ activeOutlet: Outlet | null }> = ({ activeOutlet })
   const [data, setData] = useState<any[]>([]);
   const [hsnSummary, setHsnSummary] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterMode, setFilterMode] = useState<'MONTHLY' | 'FY'>('MONTHLY');
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedFy, setSelectedFy] = useState(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    // Indian FY: April to March
+    return month < 3 ? `${(year - 1) % 100}-${year % 100}` : `${year % 100}-${(year + 1) % 100}`;
+  });
   const [activeSubTab, setActiveSubTab] = useState<'SALES' | 'HSN' | 'LIABILITY'>('SALES');
+
+  // Dynamic Year List (Current +/- 2 years)
+  const years = useMemo(() => {
+    const current = new Date().getFullYear();
+    return Array.from({ length: 5 }, (_, i) => current - 2 + i);
+  }, []);
+
+  // Dynamic FY List
+  const fyList = useMemo(() => {
+    const current = new Date().getFullYear();
+    return Array.from({ length: 4 }, (_, i) => {
+      const startYear = current - 2 + i;
+      return `${startYear % 100}-${(startYear + 1) % 100}`;
+    });
+  }, []);
 
   useEffect(() => {
     loadGstData();
-  }, [activeOutlet, selectedMonth, selectedYear]);
+  }, [activeOutlet, selectedMonth, selectedYear, selectedFy, filterMode]);
 
   const loadGstData = async () => {
     if (!activeOutlet || !activeOutlet.gst_registered) return;
@@ -37,8 +60,19 @@ const GstReports: React.FC<{ activeOutlet: Outlet | null }> = ({ activeOutlet })
       const client = getSupabase();
       const profile = await authService.getProfile();
       
-      const start = new Date(selectedYear, selectedMonth, 1).toISOString();
-      const end = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59, 999).toISOString();
+      let start: string;
+      let end: string;
+
+      if (filterMode === 'MONTHLY') {
+        start = new Date(selectedYear, selectedMonth, 1).toISOString();
+        end = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59, 999).toISOString();
+      } else {
+        // FY: April 1st of start year to March 31st of end year
+        const [startShort, endShort] = selectedFy.split('-').map(Number);
+        const fullStartYear = 2000 + (startShort < 50 ? startShort : startShort - 100); // Simple 21st century logic
+        start = new Date(fullStartYear, 3, 1).toISOString(); // April 1
+        end = new Date(fullStartYear + 1, 2, 31, 23, 59, 59, 999).toISOString(); // March 31
+      }
 
       const params = { outletId: activeOutlet.id, startDate: start, endDate: end };
 
@@ -136,13 +170,36 @@ const GstReports: React.FC<{ activeOutlet: Outlet | null }> = ({ activeOutlet })
         </div>
         <div className="flex gap-3">
           <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
-             <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))} className="p-2 text-xs font-black outline-none border-none bg-transparent cursor-pointer">
-                {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
-             </select>
-             <span className="flex items-center text-slate-300">|</span>
-             <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="p-2 text-xs font-black outline-none border-none bg-transparent cursor-pointer">
-                {[2023, 2024, 2025].map(y => <option key={y} value={y}>{y}</option>)}
-             </select>
+             <button 
+               onClick={() => setFilterMode('MONTHLY')}
+               className={`px-4 py-2 rounded-xl text-[10px] font-black transition-all ${filterMode === 'MONTHLY' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}
+             >
+               Monthly
+             </button>
+             <button 
+               onClick={() => setFilterMode('FY')}
+               className={`px-4 py-2 rounded-xl text-[10px] font-black transition-all ${filterMode === 'FY' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}
+             >
+               Financial Year
+             </button>
+          </div>
+
+          <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
+             {filterMode === 'MONTHLY' ? (
+               <>
+                 <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))} className="p-2 text-xs font-black outline-none border-none bg-transparent cursor-pointer">
+                    {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                 </select>
+                 <span className="flex items-center text-slate-300">|</span>
+                 <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="p-2 text-xs font-black outline-none border-none bg-transparent cursor-pointer">
+                    {years.map(y => <option key={y} value={y}>{y}</option>)}
+                 </select>
+               </>
+             ) : (
+               <select value={selectedFy} onChange={e => setSelectedFy(e.target.value)} className="p-2 text-xs font-black outline-none border-none bg-transparent cursor-pointer">
+                  {fyList.map(fy => <option key={fy} value={fy}>FY 20{fy}</option>)}
+               </select>
+             )}
           </div>
           <button className="flex items-center gap-2 bg-indigo-600 text-white px-8 py-3 rounded-xl font-black shadow-xl hover:scale-105 transition-all text-xs uppercase tracking-widest">
             <Download size={20} /> Export GSTR-1
@@ -194,7 +251,7 @@ const GstReports: React.FC<{ activeOutlet: Outlet | null }> = ({ activeOutlet })
         <div className="bg-white p-32 rounded-[60px] border-4 border-dashed border-slate-100 flex flex-col items-center justify-center text-center space-y-6">
            <Archive size={80} className="text-slate-100" />
            <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Empty Compliance Vault</h3>
-           <p className="text-sm text-slate-400 font-bold max-w-xs">No taxable events found for {MONTHS[selectedMonth]} {selectedYear}.</p>
+           <p className="text-sm text-slate-400 font-bold max-w-xs">No taxable events found for {filterMode === 'MONTHLY' ? `${MONTHS[selectedMonth]} ${selectedYear}` : `FY 20${selectedFy}`}.</p>
         </div>
       ) : (
         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">

@@ -64,7 +64,7 @@ export const salesService = {
   },
 
   /**
-   * Finalizes a sale with full GST compliance.
+   * Finalizes a sale with full GST compliance via server-side RPC.
    */
   async settleBill(payload: {
     orderId: string,
@@ -75,94 +75,20 @@ export const salesService = {
   }) {
     const client = getSupabase();
     if (!client) throw new Error("Supabase required");
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error("Unauthorized");
 
-    // 1. Resolve Outlet and Destination State
-    const { data: outlet } = await client.from('outlets').select('*').eq('id', payload.outletId).single();
-    if (!outlet) throw new Error("Outlet mapping failed");
-
-    const gstRegistered = outlet.gst_registered ?? false;
-    const outletState = outlet.gst_state_code || outlet.state_code || '27';
-    const destState = payload.customerStateCode || outletState;
-    const isInterState = outletState !== destState;
-
-    // 2. Fetch Fresh Menu Data for calculation
-    const itemIds = payload.items.map(i => i.id);
-    const { data: menuItems } = await client.from('menu_items').select('*').in('id', itemIds);
-    if (!menuItems) throw new Error("Menu items sync error");
-
-    // 3. Perform accurate GST calculations
-    const processedItems: CartItem[] = payload.items.map(cartReq => {
-      const menu = menuItems.find(m => m.id === cartReq.id);
-      if (!menu) throw new Error(`Item ${cartReq.id} missing in catalog`);
-      return this.calculateItemGst(menu, cartReq.quantity, outletState, destState, gstRegistered, cartReq.selected_modifiers);
+    const { data, error } = await client.rpc('settle_bill', {
+      p_order_id: payload.orderId,
+      p_outlet_id: payload.outletId,
+      p_items: payload.items,
+      p_payment_method: payload.paymentMethod,
+      p_customer_state_code: payload.customerStateCode
     });
 
-    // 4. Aggregate Totals
-    const subtotal = processedItems.reduce((acc, i) => acc + i.taxable_value, 0);
-    const cgstTotal = processedItems.reduce((acc, i) => acc + i.cgst_amount, 0);
-    const sgstTotal = processedItems.reduce((acc, i) => acc + i.sgst_amount, 0);
-    const igstTotal = processedItems.reduce((acc, i) => acc + i.igst_amount, 0);
-    const totalTax = cgstTotal + sgstTotal + igstTotal;
-    const rawGrandTotal = subtotal + totalTax;
-    const grandTotal = Math.round(rawGrandTotal);
-    const roundOff = parseFloat((grandTotal - rawGrandTotal).toFixed(2));
+    if (error) throw new Error(error.message);
 
-    // Determine order's primary GST rate (weighted or max)
-    const primaryGstRate = processedItems.length > 0 ? processedItems[0].tax_percentage : 5.0;
-
-    // 5. Generate FY Number
-    const invoiceNo = await this.getNextInvoiceNumber(payload.outletId);
-
-    // 6. DB TRANSACTION: Create Invoice with standardizeed GST fields
-    const { data: invoice, error: invErr } = await client
-      .from('invoices')
-      .insert({
-        company_id: profile.company_id,
-        outlet_id: payload.outletId,
-        order_id: payload.orderId,
-        invoice_number: invoiceNo,
-        billing_state_code: destState,
-        outlet_state_code: outletState,
-        taxable_value: parseFloat(subtotal.toFixed(2)), // Standards compliance: mapped from subtotal
-        subtotal: parseFloat(subtotal.toFixed(2)),
-        cgst_amount: cgstTotal,
-        sgst_amount: sgstTotal,
-        igst_amount: igstTotal,
-        total_tax: parseFloat(totalTax.toFixed(2)),
-        round_off: roundOff,
-        grand_total: grandTotal,
-        total_amount: grandTotal, // Standards compliance: mapped from grand_total
-        gst_rate: primaryGstRate,
-        gst_type: isInterState ? 'IGST' : 'CGST_SGST',
-        payment_method: payload.paymentMethod
-      })
-      .select()
-      .single();
-
-    if (invErr) throw new Error(invErr.message);
-
-    // 7. DB TRANSACTION: Create Invoice Items (Audit Log)
-    const invoiceItemRows = processedItems.map(item => ({
-      invoice_id: invoice.id,
-      menu_item_id: item.id,
-      quantity: item.quantity,
-      selected_modifiers: item.selected_modifiers,
-      taxable_value: item.taxable_value,
-      cgst_amount: item.cgst_amount,
-      sgst_amount: item.sgst_amount,
-      igst_amount: item.igst_amount,
-      total_amount: item.total_amount
-    }));
-
-    const { error: itemsErr } = await client.from('invoice_items').insert(invoiceItemRows);
-    if (itemsErr) throw new Error(itemsErr.message);
-
-    // 8. Update Order Status
-    const { error: orderErr } = await client.from('orders').update({ status: 'completed' }).eq('id', payload.orderId);
-    if (orderErr) throw new Error(orderErr.message);
-
-    return { invoiceNo, grandTotal };
+    return { 
+      invoiceNo: data.invoiceNo, 
+      grandTotal: data.grandTotal 
+    };
   }
 };
