@@ -5,7 +5,7 @@ import {
   Truck, Package, RefreshCcw, Loader2, Cloud, ShieldCheck, 
   Monitor, Info, Lock, ArrowUpRight, ArrowDownRight, LayoutGrid, 
   User as UserIcon, Calendar, Percent, ShieldAlert, BrainCircuit, ChevronRight, Zap, LineChart as LineChartIcon,
-  Sparkles, BarChart3, Utensils
+  Sparkles, BarChart3, Utensils, Activity
 } from 'lucide-react';
 import { analyticsService } from '../services/analyticsService';
 import { aiService } from '../services/aiService';
@@ -171,7 +171,31 @@ const Dashboard: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletI
            <button onClick={initDashboard} className="px-10 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-all">Refresh Pipeline</button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        <div className="space-y-10">
+          {/* AI Operational Insights Strip */}
+          {insights.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {insights.slice(0, 3).map((insight, idx) => (
+                <div key={idx} className={`p-6 rounded-[32px] border-l-8 shadow-sm flex flex-col justify-between ${
+                  insight.severity === 'CRITICAL' ? 'bg-rose-50 border-rose-500 text-rose-700' : 
+                  insight.severity === 'HIGH' ? 'bg-orange-50 border-orange-500 text-orange-700' : 
+                  'bg-indigo-50 border-indigo-500 text-indigo-700'
+                }`}>
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-center gap-2">
+                      <Zap size={16} />
+                      <span className="text-[10px] font-black uppercase tracking-widest">{insight.category}</span>
+                    </div>
+                    <span className="text-[8px] font-black uppercase px-2 py-0.5 bg-white/50 rounded-full">{insight.severity}</span>
+                  </div>
+                  <h4 className="text-sm font-black tracking-tight mb-2">{insight.title}</h4>
+                  <p className="text-[10px] font-bold opacity-70 line-clamp-2">{insight.summary}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
          <div className="lg:col-span-2 space-y-10">
             <div className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm space-y-10">
                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Hourly Sales Pattern</h3>
@@ -272,6 +296,30 @@ const Dashboard: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletI
                </div>
             </div>
 
+            {/* Compliance Health Section */}
+            <div className="bg-slate-900 p-10 rounded-[48px] text-white space-y-8 relative overflow-hidden shadow-2xl">
+               <div className="absolute top-0 right-0 p-8 opacity-10"><ShieldCheck size={120} /></div>
+               <h4 className="text-lg font-black tracking-tight uppercase relative z-10">Compliance Health</h4>
+               <div className="space-y-6 relative z-10">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">CGST</span>
+                    <span className="font-black">₹{metrics?.cgst?.toFixed(2) || '0.00'}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">SGST</span>
+                    <span className="font-black">₹{metrics?.sgst?.toFixed(2) || '0.00'}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">IGST</span>
+                    <span className="font-black">₹{metrics?.igst?.toFixed(2) || '0.00'}</span>
+                  </div>
+                  <div className="pt-6 border-t border-slate-800 flex justify-between items-center">
+                    <span className="text-xs font-black text-orange-500 uppercase tracking-widest">Total Liability</span>
+                    <span className="text-xl font-black text-orange-500">₹{metrics?.total_tax?.toFixed(2) || '0.00'}</span>
+                  </div>
+               </div>
+            </div>
+
             {role === 'OWNER' && (
               <div className="bg-slate-900 p-10 rounded-[48px] text-white space-y-8 relative overflow-hidden shadow-2xl">
                  <div className="absolute top-0 right-0 p-8 opacity-10"><Monitor size={120} /></div>
@@ -293,7 +341,8 @@ const Dashboard: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletI
                  </div>
               </div>
             )}
-         </div>
+          </div>
+        </div>
       </div>
      )}
     </div>

@@ -166,8 +166,12 @@ const App: React.FC = () => {
   return (
     <SessionGuard>
       <Routes>
-        <Route path="/" element={<LandingPage onLogin={() => navigate('/auth')} onGetStarted={() => navigate('/auth')} />} />
+        <Route path="/" element={<LandingPage onLogin={() => navigate('/auth')} onGetStarted={() => navigate('/signup')} />} />
         <Route path="/auth" element={<Auth type="login" onCancel={() => navigate('/')} onAuthenticated={async (org, user) => { 
+          setAuthState({ org, user }); 
+          navigate('/dashboard'); 
+        }} />} />
+        <Route path="/signup" element={<Auth type="signup" onCancel={() => navigate('/')} onAuthenticated={async (org, user) => { 
           setAuthState({ org, user }); 
           navigate('/dashboard'); 
         }} />} />

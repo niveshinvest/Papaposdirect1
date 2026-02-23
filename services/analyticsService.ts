@@ -19,7 +19,7 @@ export const analyticsService = {
 
     let query = client
       .from('invoices')
-      .select('total_amount, taxable_value, total_tax, payment_method, created_at')
+      .select('total_amount, grand_total, taxable_value, total_tax, cgst_amount, sgst_amount, igst_amount, payment_method, created_at')
       .eq('company_id', profile.company_id)
       .gte('created_at', params.startDate)
       .lte('created_at', params.endDate);
@@ -40,6 +40,9 @@ export const analyticsService = {
       gross_sales: 0,
       taxable_value: 0,
       total_tax: 0,
+      cgst: 0,
+      sgst: 0,
+      igst: 0,
       order_count: data?.length || 0,
       avg_bill: 0,
       payment_splits: {} as Record<string, number>,
@@ -47,15 +50,18 @@ export const analyticsService = {
     };
 
     data?.forEach(inv => {
-      stats.gross_sales += Number(inv.total_amount);
-      stats.taxable_value += Number(inv.taxable_value);
-      stats.total_tax += Number(inv.total_tax);
+      stats.gross_sales += Number(inv.total_amount || inv.grand_total || 0);
+      stats.taxable_value += Number(inv.taxable_value || 0);
+      stats.total_tax += Number(inv.total_tax || 0);
+      stats.cgst += Number(inv.cgst_amount || 0);
+      stats.sgst += Number(inv.sgst_amount || 0);
+      stats.igst += Number(inv.igst_amount || 0);
       
       const method = inv.payment_method || 'Other';
-      stats.payment_splits[method] = (stats.payment_splits[method] || 0) + Number(inv.total_amount);
+      stats.payment_splits[method] = (stats.payment_splits[method] || 0) + Number(inv.total_amount || inv.grand_total || 0);
 
       const hour = new Date(inv.created_at).getHours();
-      stats.hourly_sales[hour] += Number(inv.total_amount);
+      stats.hourly_sales[hour] += Number(inv.total_amount || inv.grand_total || 0);
     });
 
     stats.avg_bill = stats.order_count > 0 ? stats.gross_sales / stats.order_count : 0;
