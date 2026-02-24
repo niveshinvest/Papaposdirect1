@@ -37,7 +37,14 @@ ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT FALSE,
 ADD COLUMN IF NOT EXISTS edit_reason TEXT,
 ADD COLUMN IF NOT EXISTS edit_timestamp TIMESTAMPTZ,
 ADD COLUMN IF NOT EXISTS payment_mode_name TEXT, -- Snapshot for audit trail
-ADD COLUMN IF NOT EXISTS place_of_supply TEXT; -- Legal requirement for GST
+ADD COLUMN IF NOT EXISTS place_of_supply TEXT, -- Legal requirement for GST
+ADD COLUMN IF NOT EXISTS qr_payload TEXT, -- Legally required for GST QR codes
+ADD COLUMN IF NOT EXISTS seller_gstin TEXT,
+ADD COLUMN IF NOT EXISTS seller_legal_name TEXT,
+ADD COLUMN IF NOT EXISTS seller_trade_name TEXT,
+ADD COLUMN IF NOT EXISTS seller_state_code TEXT,
+ADD COLUMN IF NOT EXISTS irn TEXT,
+ADD COLUMN IF NOT EXISTS irn_generated_at TIMESTAMPTZ;
 
 -- Fix invoices constraints (Value drift)
 ALTER TABLE public.invoices DROP CONSTRAINT IF EXISTS invoices_invoice_type_check;

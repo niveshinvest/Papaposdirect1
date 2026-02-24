@@ -209,7 +209,11 @@ export const syncService = {
       const pendingInvoices = await db.invoices.where('sync_status').equals('pending').toArray();
       for (const invoice of pendingInvoices) {
         if (staff.role !== 'OWNER' && staff.outlet_ids && !staff.outlet_ids.includes(invoice.outlet_id)) continue;
-        const { error } = await client.from('invoices').upsert({ ...invoice, sync_status: 'synced' });
+        
+        // SANITIZE: Remove UI-only or non-canonical fields before sync
+        const { printed, printer_id, ...canonicalInvoice } = invoice as any;
+        
+        const { error } = await client.from('invoices').upsert({ ...canonicalInvoice, sync_status: 'synced' });
         if (!error) await db.invoices.update(invoice.id, { sync_status: 'synced' });
       }
 
