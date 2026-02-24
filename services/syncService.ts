@@ -215,6 +215,11 @@ export const syncService = {
 
       const pendingInvoiceItems = await db.invoice_items.where('sync_status').equals('pending').toArray();
       for (const item of pendingInvoiceItems) {
+        // ENFORCED WRITE ORDER: Ensure parent invoice is synced first
+        const parent = await db.invoices.get(item.invoice_id);
+        if (!parent || parent.sync_status !== 'synced') {
+          continue; // Skip until parent is synced
+        }
         const { error } = await client.from('invoice_items').upsert({ ...item, sync_status: 'synced' });
         if (!error) await db.invoice_items.update(item.id, { sync_status: 'synced' });
       }

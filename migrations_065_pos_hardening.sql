@@ -36,7 +36,8 @@ ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1,
 ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT FALSE,
 ADD COLUMN IF NOT EXISTS edit_reason TEXT,
 ADD COLUMN IF NOT EXISTS edit_timestamp TIMESTAMPTZ,
-ADD COLUMN IF NOT EXISTS payment_mode_name TEXT; -- Snapshot for audit trail
+ADD COLUMN IF NOT EXISTS payment_mode_name TEXT, -- Snapshot for audit trail
+ADD COLUMN IF NOT EXISTS place_of_supply TEXT; -- Legal requirement for GST
 
 -- Fix invoices constraints (Value drift)
 ALTER TABLE public.invoices DROP CONSTRAINT IF EXISTS invoices_invoice_type_check;
@@ -63,6 +64,13 @@ ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
 ALTER TABLE public.invoice_items DROP CONSTRAINT IF EXISTS invoice_items_sync_status_check;
 ALTER TABLE public.invoice_items ADD CONSTRAINT invoice_items_sync_status_check 
     CHECK (sync_status = ANY (ARRAY['pending'::text, 'synced'::text, 'failed'::text, 'PENDING'::text, 'SYNCED'::text, 'FAILED'::text]));
+
+-- Fix Foreign Key for Offline Sync (Deferrable)
+ALTER TABLE public.invoice_items DROP CONSTRAINT IF EXISTS invoice_items_invoice_id_fkey;
+ALTER TABLE public.invoice_items ADD CONSTRAINT invoice_items_invoice_id_fkey 
+    FOREIGN KEY (invoice_id) REFERENCES public.invoices(id) 
+    ON DELETE CASCADE 
+    DEFERRABLE INITIALLY DEFERRED;
 
 -- 4. KITCHEN_ORDERS TABLE HARDENING
 ALTER TABLE public.kitchen_orders 

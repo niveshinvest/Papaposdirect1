@@ -330,8 +330,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
         finalized_by_user_id: currentUser.id,
         finalized_at: invDate,
         qr_payload: qrPayload || undefined, 
-        irp_status: 'NOT_GENERATED',
-        printed: true
+        irp_status: 'NOT_GENERATED'
       };
 
       const invoice = await db.createSyncableRecord(db.invoices, invoiceData, ctx);

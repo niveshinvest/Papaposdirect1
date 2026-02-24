@@ -223,7 +223,6 @@ export interface Invoice {
   sync_status?: 'synced' | 'pending';
   finalized_by_user_id?: string;
   finalized_at?: string;
-  printed?: boolean;
   printer_id?: string;
   qr_payload?: string;
   irn?: string;
