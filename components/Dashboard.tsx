@@ -61,7 +61,15 @@ const Dashboard: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletI
     setError(null);
     try {
       const profile = await authService.getProfile();
-      if (!profile) return navigate('/auth');
+      if (!profile) {
+        // Check if it's a network issue or truly unauthorized
+        const user = await authService.getCurrentUser();
+        if (!user) {
+          return navigate('/auth');
+        } else {
+          throw new Error("Cloud connection lost. Please check your network.");
+        }
+      }
       setRole(profile.role);
       
       const today = new Date();

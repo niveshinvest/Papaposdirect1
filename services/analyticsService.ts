@@ -15,7 +15,7 @@ export const analyticsService = {
   async getLiveStats(params: ReportParams) {
     const client = getSupabase();
     const profile = await authService.getProfile();
-    if (!profile) throw new Error("Unauthorized");
+    if (!profile) throw new Error("Cloud connection lost or session expired. Please refresh.");
 
     let query = client
       .from('invoices')
@@ -75,7 +75,7 @@ export const analyticsService = {
   async getTopItems(params: ReportParams, limit = 5) {
     const client = getSupabase();
     const profile = await authService.getProfile();
-    if (!profile) throw new Error("Unauthorized");
+    if (!profile) throw new Error("Cloud connection lost or session expired.");
 
     const { data, error } = await client.rpc('get_top_selling_items', {
       p_company_id: profile.company_id,
@@ -98,7 +98,7 @@ export const analyticsService = {
   async getHsnSummary(params: ReportParams) {
     const client = getSupabase();
     const profile = await authService.getProfile();
-    if (!profile) throw new Error("Unauthorized");
+    if (!profile) throw new Error("Cloud connection lost or session expired.");
 
     const { data, error } = await client.rpc('get_hsn_summary', {
       p_company_id: profile.company_id,
@@ -118,7 +118,7 @@ export const analyticsService = {
   async getFullSalesReport(params: ReportParams) {
     const client = getSupabase();
     const profile = await authService.getProfile();
-    if (!profile) throw new Error("Unauthorized");
+    if (!profile) throw new Error("Cloud connection lost or session expired.");
 
     let query = client
       .from('invoices')

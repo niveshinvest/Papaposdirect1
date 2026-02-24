@@ -67,7 +67,14 @@ const AVAILABLE_MIGRATIONS = [
   { version: 55, file: 'migrations_055_realtime_reporting.sql' },
   { version: 56, file: 'migrations_056_analytics_rpcs.sql' },
   { version: 57, file: 'migrations_057_invoice_schema_compliance.sql' },
-  { version: 58, file: 'migrations_058_staff_sessions_identity_link.sql' }
+  { version: 58, file: 'migrations_058_staff_sessions_identity_link.sql' },
+  { version: 59, file: 'migrations_059_outlet_gst_fix.sql' },
+  { version: 60, file: 'migrations_060_menu_modifiers.sql' },
+  { version: 61, file: 'migrations_061_invoice_modifiers.sql' },
+  { version: 62, file: 'migrations_062_rls_fix.sql' },
+  { version: 63, file: 'migrations_063_invoice_fix.sql' },
+  { version: 64, file: 'migrations_064_kds_fix.sql' },
+  { version: 65, file: 'migrations_065_pos_hardening.sql' }
 ];
 
 export const getDatabaseVersion = async (): Promise<MigrationStatus> => {

@@ -31,10 +31,20 @@ export const testConnection = async (url: string, key: string) => {
  */
 export const authService = {
   async getCurrentUser() {
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    if (session?.user) return session.user;
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    return user;
+    try {
+      const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (session?.user) return session.user;
+      
+      const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+      if (userError) return null; // No active user is fine
+      return user;
+    } catch (e: any) {
+      if (e.message === 'Failed to fetch') {
+        console.error("Supabase Connection Error: Failed to fetch. Check your internet or Supabase URL.");
+      }
+      return null;
+    }
   },
 
   async getProfile() {
@@ -42,18 +52,23 @@ export const authService = {
       const user = await this.getCurrentUser();
       if (!user) return null;
 
-      let { data, error } = await supabaseClient
+      const { data, error } = await supabaseClient
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .maybeSingle();
       
       if (error) {
-        console.error("Cloud identity check failed:", error.message);
-        throw new Error(error.message || "Failed to retrieve user profile from cloud.");
+        console.error("Profile fetch failed:", error.message);
+        // If it's a network error, we want to know
+        if (error.message === 'Failed to fetch') {
+          throw new Error("Cloud connection lost. Please check your network.");
+        }
+        throw new Error(error.message || "Failed to retrieve user profile.");
       }
 
       if (!data) {
+        // Auto-create profile if missing (e.g. first time login)
         const { error: insertError } = await supabaseClient
           .from('profiles')
           .insert({
@@ -65,20 +80,21 @@ export const authService = {
         if (insertError) throw new Error(insertError.message);
         const { data: refreshed, error: refreshError } = await supabaseClient.from('profiles').select('*').eq('id', user.id).single();
         if (refreshError) throw new Error(refreshError.message);
-        data = refreshed;
+        return refreshed;
       }
 
+      // Link company data if exists
       if (data && data.company_id) {
          const { data: company, error: compError } = await supabaseClient.from('companies').select('*').eq('id', data.company_id).maybeSingle();
-         if (compError) throw new Error(compError.message);
-         if (company) data.companies = company;
+         if (compError) {
+           console.warn("Company fetch failed:", compError.message);
+         } else if (company) {
+           data.companies = company;
+         }
       }
       return data;
     } catch (e: any) {
-      console.error("Auth Failure (Cloud Connection):", e.message || e);
-      if (e.message === 'Failed to fetch') {
-        console.warn("Network Error: Could not reach Supabase. Check your internet connection or Supabase URL.");
-      }
+      console.error("Auth Service Failure:", e.message || e);
       return null;
     }
   },

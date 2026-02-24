@@ -90,5 +90,53 @@ export const salesService = {
       invoiceNo: data.invoiceNo, 
       grandTotal: data.grandTotal 
     };
+  },
+
+  /**
+   * Fetches an invoice with its line items for review or editing.
+   */
+  async getInvoiceWithItems(invoiceId: string) {
+    const client = getSupabase();
+    if (!client) throw new Error("Supabase required");
+
+    const { data: invoice, error: invError } = await client
+      .from('invoices')
+      .select('*, invoice_items(*)')
+      .eq('id', invoiceId)
+      .single();
+
+    if (invError) throw new Error(invError.message);
+    return invoice;
+  },
+
+  /**
+   * Securely edits an invoice, updates KOT, and records audit log via RPC.
+   */
+  async editInvoice(payload: {
+    invoiceId: string,
+    newSubtotal: number,
+    newTotalTax: number,
+    newGrandTotal: number,
+    newItems: any[],
+    editReason: string
+  }) {
+    const client = getSupabase();
+    if (!client) throw new Error("Supabase required");
+
+    const profile = await authService.getProfile();
+    if (!profile) throw new Error("Authentication required");
+
+    const { error } = await client.rpc('edit_invoice', {
+      p_invoice_id: payload.invoiceId,
+      p_new_subtotal: payload.newSubtotal,
+      p_new_total_tax: payload.newTotalTax,
+      p_new_grand_total: payload.newGrandTotal,
+      p_new_items: payload.newItems,
+      p_edit_reason: payload.editReason,
+      p_actor_id: profile.id
+    });
+
+    if (error) throw new Error(error.message);
+    return true;
   }
 };
