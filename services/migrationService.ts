@@ -74,7 +74,8 @@ const AVAILABLE_MIGRATIONS = [
   { version: 62, file: 'migrations_062_rls_fix.sql' },
   { version: 63, file: 'migrations_063_invoice_fix.sql' },
   { version: 64, file: 'migrations_064_kds_fix.sql' },
-  { version: 65, file: 'migrations_065_pos_hardening.sql' }
+  { version: 65, file: 'migrations_065_pos_hardening.sql' },
+  { version: 66, file: 'migrations_066_invoices_baseline.sql' }
 ];
 
 export const getDatabaseVersion = async (): Promise<MigrationStatus> => {

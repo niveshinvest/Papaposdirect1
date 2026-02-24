@@ -19,7 +19,7 @@ export const analyticsService = {
 
     let query = client
       .from('invoices')
-      .select('total_amount, grand_total, taxable_value, total_tax, cgst_amount, sgst_amount, igst_amount, payment_method, created_at')
+      .select('subtotal, grand_total, taxable_value, total_tax, cgst_amount, sgst_amount, igst_amount, payment_method, created_at')
       .eq('company_id', profile.company_id)
       .gte('created_at', params.startDate)
       .lte('created_at', params.endDate);
@@ -50,7 +50,7 @@ export const analyticsService = {
     };
 
     data?.forEach(inv => {
-      stats.gross_sales += Number(inv.total_amount || inv.grand_total || 0);
+      stats.gross_sales += Number(inv.subtotal || inv.grand_total || 0);
       stats.taxable_value += Number(inv.taxable_value || 0);
       stats.total_tax += Number(inv.total_tax || 0);
       stats.cgst += Number(inv.cgst_amount || 0);
@@ -58,10 +58,10 @@ export const analyticsService = {
       stats.igst += Number(inv.igst_amount || 0);
       
       const method = inv.payment_method || 'Other';
-      stats.payment_splits[method] = (stats.payment_splits[method] || 0) + Number(inv.total_amount || inv.grand_total || 0);
+      stats.payment_splits[method] = (stats.payment_splits[method] || 0) + Number(inv.subtotal || inv.grand_total || 0);
 
       const hour = new Date(inv.created_at).getHours();
-      stats.hourly_sales[hour] += Number(inv.total_amount || inv.grand_total || 0);
+      stats.hourly_sales[hour] += Number(inv.subtotal || inv.grand_total || 0);
     });
 
     stats.avg_bill = stats.order_count > 0 ? stats.gross_sales / stats.order_count : 0;
@@ -122,7 +122,7 @@ export const analyticsService = {
 
     let query = client
       .from('invoices')
-      .select('invoice_number, created_at, outlet_id, total_amount, total_tax, taxable_value, payment_method, finalized_by_user_id')
+      .select('invoice_number, created_at, outlet_id, subtotal, total_tax, taxable_value, payment_method, finalized_by_user_id')
       .eq('company_id', profile.company_id)
       .gte('created_at', params.startDate)
       .lte('created_at', params.endDate)

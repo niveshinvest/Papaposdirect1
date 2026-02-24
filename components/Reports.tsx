@@ -50,7 +50,7 @@ const Reports: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletId 
   };
 
   const stats = useMemo(() => {
-    const totalSales = data.reduce((acc, curr) => acc + Number(curr.total_amount), 0);
+    const totalSales = data.reduce((acc, curr) => acc + Number(curr.subtotal), 0);
     const totalTax = data.reduce((acc, curr) => acc + Number(curr.total_tax), 0);
     return { totalSales, totalTax, count: data.length };
   }, [data]);
