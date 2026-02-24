@@ -110,6 +110,8 @@ const Reports: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletId 
                        <th className="px-8 py-5">Payment</th>
                        <th className="px-8 py-5 text-right">Tax</th>
                        <th className="px-8 py-5 text-right">Total Amount</th>
+                        <th className="px-8 py-5 text-right">Grand Total</th>
+
                     </tr>
                  </thead>
                  <tbody className="divide-y divide-slate-50">
@@ -121,7 +123,8 @@ const Reports: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletId 
                             <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-[10px] font-black uppercase tracking-widest">{inv.payment_method}</span>
                          </td>
                          <td className="px-8 py-6 text-right font-bold text-emerald-600">₹{Number(inv.total_tax).toFixed(2)}</td>
-                         <td className="px-8 py-6 text-right font-black text-slate-900">₹{Number(inv.total_amount).toLocaleString()}</td>
+                         <td className="px-8 py-6 text-right font-black text-slate-900">₹{Number(inv.subtotal).toLocaleString()}</td>
+                         <td className="px-8 py-6 text-right font-black text-slate-900">₹{Number(inv.subtotal).toLocaleString()}</td>
                       </tr>
                     ))}
                  </tbody>

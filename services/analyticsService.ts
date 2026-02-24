@@ -122,7 +122,7 @@ export const analyticsService = {
 
     let query = client
       .from('invoices')
-      .select('invoice_number, created_at, outlet_id, subtotal, total_tax, taxable_value, payment_method, finalized_by_user_id')
+      .select('invoice_number, created_at, outlet_id, subtotal, total_tax, taxable_value, grand_total, payment_method, finalized_by_user_id')
       .eq('company_id', profile.company_id)
       .gte('created_at', params.startDate)
       .lte('created_at', params.endDate)

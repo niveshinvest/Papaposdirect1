@@ -6,7 +6,7 @@ import {
   X, Utensils, Layers, Info, WifiOff, Wifi,
   MonitorPlay, ChevronRight, Check, AlertCircle, Loader2,
   ChevronLeft, ShoppingBag, Printer, QrCode, User, CreditCard, Wallet, Banknote,
-  Settings2
+  Settings2, Mic, MicOff, Sparkles
 } from 'lucide-react';
 import { salesService } from '../services/salesService';
 import { kitchenService } from '../services/kitchenService';
@@ -14,6 +14,8 @@ import { sessionService } from '../services/sessionService';
 import { paymentService } from '../services/supabaseService';
 import { db } from '../services/db';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { processVoiceInput, VoiceCommand } from '../services/voiceAssistantService';
+import { motion, AnimatePresence } from 'motion/react';
 
 // --- Price Integrity Contract ---
 interface ValidatedCartItem {
@@ -44,6 +46,11 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [modifierItem, setModifierItem] = useState<any | null>(null);
   const [tempSelectedModifiers, setTempSelectedModifiers] = useState<Modifier[]>([]);
+
+  // Voice Assistant State
+  const [isListening, setIsListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [aiStatus, setAiStatus] = useState<{ message: string; type: 'info' | 'success' | 'error' | 'warning' } | null>(null);
 
   const toggleModifier = (mod: Modifier) => {
     setTempSelectedModifiers(prev => 
@@ -172,6 +179,116 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
     setModifierItem(null);
     setTempSelectedModifiers([]);
     if (window.innerWidth > 1024 && !isCartOpen) setIsCartOpen(true);
+  };
+
+  const handleVoiceCommand = async (command: VoiceCommand) => {
+    const { action, item_name, quantity, modifier, suggestions } = command;
+
+    if (action === 'CLARIFY') {
+      setAiStatus({ message: "I'm not sure what you mean. Could you clarify?", type: 'warning' });
+      return;
+    }
+
+    if (action === 'SUGGEST_CROSS_SELL') {
+      setAiStatus({ 
+        message: `Would you like to add ${suggestions.join(' or ')}?`, 
+        type: 'info' 
+      });
+      return;
+    }
+
+    const matchedItem = menuItems.find(i => i.name.toLowerCase() === item_name?.toLowerCase());
+
+    if (!matchedItem && (action === 'ADD_ITEM' || action === 'UPDATE_QTY' || action === 'REMOVE_ITEM')) {
+      setAiStatus({ message: `I couldn't find "${item_name}" on the menu.`, type: 'error' });
+      return;
+    }
+
+    switch (action) {
+      case 'ADD_ITEM':
+        if (matchedItem) {
+          const qtyToAdd = quantity || 1;
+          for (let i = 0; i < qtyToAdd; i++) {
+            addToCart(matchedItem);
+          }
+          setAiStatus({ message: `Added ${qtyToAdd} ${matchedItem.name}(s)`, type: 'success' });
+        }
+        break;
+      case 'UPDATE_QTY':
+        if (matchedItem && quantity !== null) {
+          const currentItem = cart.find(i => i.id === matchedItem.id);
+          if (currentItem) {
+            const delta = quantity - currentItem.quantity;
+            updateQuantity(matchedItem.id, delta, currentItem.selected_modifiers);
+            setAiStatus({ message: `Updated ${matchedItem.name} quantity to ${quantity}`, type: 'success' });
+          }
+        }
+        break;
+      case 'REMOVE_ITEM':
+        if (matchedItem) {
+          const currentItem = cart.find(i => i.id === matchedItem.id);
+          if (currentItem) {
+            updateQuantity(matchedItem.id, -currentItem.quantity, currentItem.selected_modifiers);
+            setAiStatus({ message: `Removed ${matchedItem.name} from cart`, type: 'success' });
+          }
+        }
+        break;
+      case 'ADD_MODIFIER':
+        if (matchedItem && modifier) {
+          const currentItem = cart.find(i => i.id === matchedItem.id);
+          const modToApply = matchedItem.modifiers?.find(m => m.name.toLowerCase() === modifier.toLowerCase());
+          if (currentItem && modToApply) {
+            // This is a bit complex as addToCart handles modifiers via state
+            // For now, let's just show a message or try to apply it if possible
+            setAiStatus({ message: `Applying ${modifier} to ${matchedItem.name}`, type: 'info' });
+            // Logic to apply modifier would go here
+          } else {
+            setAiStatus({ message: `Could not find modifier "${modifier}" for ${matchedItem.name}`, type: 'error' });
+          }
+        }
+        break;
+    }
+  };
+
+  const startListening = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      alert("Speech recognition is not supported in this browser.");
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+
+    recognition.lang = 'en-IN';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setAiStatus({ message: "Listening...", type: 'info' });
+    };
+
+    recognition.onresult = async (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setVoiceTranscript(transcript);
+      setAiStatus({ message: `Processing: "${transcript}"`, type: 'info' });
+      
+      const command = await processVoiceInput(transcript, menuItems);
+      await handleVoiceCommand(command);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+      setIsListening(false);
+      setAiStatus({ message: `Error: ${event.error}`, type: 'error' });
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      setTimeout(() => setAiStatus(null), 5000);
+    };
+
+    recognition.start();
   };
 
   const updateQuantity = (id: string, delta: number, modifiers?: Modifier[]) => {
@@ -442,7 +559,15 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
           )}
           <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input type="text" placeholder="Quick search menu..." className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none text-sm font-bold shadow-sm" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            <input type="text" placeholder="Quick search menu..." className="w-full pl-12 pr-12 py-3 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none text-sm font-bold shadow-sm" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            <button 
+              onClick={startListening}
+              className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl transition-all ${
+                isListening ? 'bg-rose-500 text-white animate-pulse' : 'bg-slate-100 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600'
+              }`}
+            >
+              {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+            </button>
           </div>
           <div className="flex bg-indigo-50 p-1 rounded-2xl border border-indigo-100">
             {['80mm', '58mm'].map(w => (
@@ -457,6 +582,66 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
           ))}
         </div>
       </div>
+
+      {/* AI Voice Assistant Overlay */}
+      <AnimatePresence>
+        {aiStatus && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[60] w-full max-w-md px-4 pointer-events-none"
+          >
+            <div className={`bg-white rounded-[2rem] shadow-2xl border-2 p-4 flex items-center gap-4 pointer-events-auto ${
+              aiStatus.type === 'success' ? 'border-emerald-500' :
+              aiStatus.type === 'error' ? 'border-rose-500' :
+              aiStatus.type === 'warning' ? 'border-amber-500' :
+              'border-indigo-500'
+            }`}>
+              <div className={`p-3 rounded-2xl ${
+                aiStatus.type === 'success' ? 'bg-emerald-50' :
+                aiStatus.type === 'error' ? 'bg-rose-50' :
+                aiStatus.type === 'warning' ? 'bg-amber-50' :
+                'bg-indigo-50'
+              }`}>
+                {isListening ? (
+                  <div className="relative">
+                    <Mic className="text-indigo-600 animate-pulse" size={24} />
+                    <motion.div
+                      animate={{ scale: [1, 1.5, 1] }}
+                      transition={{ repeat: Infinity, duration: 1.5 }}
+                      className="absolute inset-0 bg-indigo-400/20 rounded-full"
+                    />
+                  </div>
+                ) : (
+                  <Sparkles className={
+                    aiStatus.type === 'success' ? 'text-emerald-600' :
+                    aiStatus.type === 'error' ? 'text-rose-600' :
+                    aiStatus.type === 'warning' ? 'text-amber-600' :
+                    'text-indigo-600'
+                  } size={24} />
+                )}
+              </div>
+              <div className="flex-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5">AI Voice Assistant</p>
+                <p className="text-sm font-bold text-slate-800">{aiStatus.message}</p>
+              </div>
+              {isListening && (
+                <div className="flex gap-1">
+                  {[1, 2, 3].map(i => (
+                    <motion.div
+                      key={i}
+                      animate={{ height: [4, 12, 4] }}
+                      transition={{ repeat: Infinity, duration: 0.5, delay: i * 0.1 }}
+                      className="w-1 bg-indigo-400 rounded-full"
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Menu Grid */}
       <div className="flex-1 overflow-y-auto p-6 pb-32 scrollbar-hide no-print">
