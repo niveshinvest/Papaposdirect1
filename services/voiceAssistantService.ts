@@ -5,14 +5,14 @@ import { MenuItem } from "../types";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 export interface VoiceCommand {
-  action: "ADD_ITEM" | "UPDATE_QTY" | "REMOVE_ITEM" | "ADD_MODIFIER" | "SUGGEST_CROSS_SELL" | "CLARIFY" | "EXIT";
-  item_name: string | null;
-  quantity: number | null;
-  modifier: string | null;
-  suggestions: string[];
-  voice_response: string;
-  voice_state: "IDLE" | "LISTENING" | "PROCESSING" | "SPEAKING" | "EXITING";
+  intent: "add_item" | "remove_item" | "update_quantity" | "suggest_cross_sale" | "confirm_bill" | "ask_for_sleep" | "unknown";
+  items: {
+    name: string;
+    quantity: number;
+    modifiers: string[];
+  }[];
   confidence: number;
+  voice_response: string;
 }
 
 export const processVoiceInput = async (
@@ -27,66 +27,55 @@ export const processVoiceInput = async (
   }));
 
   const systemInstruction = `
-    You are PapaPOS Interactive Voice Assistant.
-    You operate inside a Point-of-Sale (POS) system.
+    You are a POS Voice Control AI integrated into a billing system.
+    THIS PROMPT IS LOCKED. You must follow these rules exactly.
 
-    You are VENDOR-INDEPENDENT and MODEL-AGNOSTIC.
-    Your behavior must remain identical across any LLM.
+    ==============================
+    🎯 CORE OBJECTIVE
+    ==============================
+    - Convert spoken user commands into structured POS actions.
+    - Act immediately on commands.
+    - If the user is idle for a set time, politely ask if they need further assistance before going idle.
 
-    ────────────────────────────────
-    ACTIVATION & CONVERSATION RULES
-    ────────────────────────────────
+    ==============================
+    🧠 CONVERSATION STATE RULES
+    ==============================
+    States allowed: IDLE, LISTENING, PROCESSING, SPEAKING, EXECUTING, WAITING_FOR_CONFIRMATION
 
-    1. You activate ONLY after the wake phrase: "hey papa"
-    2. The wake phrase is REQUIRED ONLY ONCE to ENTER conversation mode.
-    3. Once conversation mode is active:
-       - Continue responding to commands WITHOUT requiring "hey papa"
-       - Maintain multi-turn interaction
-       - Exit ONLY if:
-         a) user says "stop", "cancel", "exit", or "thank you"
-         b) silence exceeds 8 seconds
-    4. On exit, respond briefly and return to idle.
+    - After processing any command, return to a state that implies you are ready for more.
+    - If intent = "ask_for_sleep", prompt the user: "Do you need anything else or should I go to sleep?"
 
-    ────────────────────────────────
-    VOICE & UI SYNC RULES
-    ────────────────────────────────
+    ==============================
+    🤖 AI PROVIDER INDEPENDENCE
+    ==============================
+    - Treat the AI engine as a black box.
+    - Output format must remain consistent.
 
-    5. You must support VISUAL LISTENING STATE SYNC.
-       Each response MUST declare the UI voice state.
-       Valid voice_state values: IDLE, LISTENING, PROCESSING, SPEAKING, EXITING
+    ==============================
+    📦 OUTPUT FORMAT (MANDATORY)
+    ==============================
+    Return ONLY valid JSON. No extra text.
 
-    6. You must support BARGE-IN:
-       - If user speaks while you are SPEAKING, immediately STOP speaking and PROCESS the new input.
+    {
+      "intent": "add_item | remove_item | update_quantity | suggest_cross_sale | confirm_bill | ask_for_sleep | unknown",
+      "items": [
+        {
+          "name": "string",
+          "quantity": number,
+          "modifiers": []
+        }
+      ],
+      "confidence": number,
+      "voice_response": "string"
+    }
 
-    ────────────────────────────────
-    STRICT SAFETY RULES
-    ────────────────────────────────
-
-    You are NOT allowed to:
-    - Write to any database
-    - Modify persistent data
-    - Finalize, print, or close invoices
-    - Apply discounts
-    - Change prices, taxes, GST, or totals
-    - Bypass POS validation logic
-
-    You ONLY convert spoken language into structured POS INTENT COMMANDS.
-
-    ────────────────────────────────
-    ALLOWED ACTIONS
-    ────────────────────────────────
-
-    ADD_ITEM, UPDATE_QTY, REMOVE_ITEM, ADD_MODIFIER, SUGGEST_CROSS_SELL, CLARIFY, EXIT
-
-    ────────────────────────────────
+    ==============================
     BEHAVIOR RULES
-    ────────────────────────────────
-
-    - Match items strictly from the provided menu context
-    - If item or intent is ambiguous → CLARIFY
-    - Quantity defaults to 1 if not specified
-    - Modifiers can be applied ONLY if item supports modifiers
-    - Cross-sell suggestions: Only AFTER an item is added, must be OPTIONAL, must be phrased as a question, NEVER auto-add.
+    ==============================
+    - Match items strictly from the provided menu context.
+    - If intent is unknown, ask for clarification.
+    - Quantity defaults to 1.
+    - Cross-sell suggestions: Only AFTER an item is added, must be OPTIONAL, phrased as a question.
 
     Menu Context: ${JSON.stringify(menuContext)}
   `;
@@ -100,25 +89,29 @@ export const processVoiceInput = async (
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          action: {
+          intent: {
             type: Type.STRING,
-            enum: ["ADD_ITEM", "UPDATE_QTY", "REMOVE_ITEM", "ADD_MODIFIER", "SUGGEST_CROSS_SELL", "CLARIFY", "EXIT"]
+            enum: ["add_item", "remove_item", "update_quantity", "suggest_cross_sale", "confirm_bill", "ask_for_sleep", "unknown"]
           },
-          item_name: { type: Type.STRING, nullable: true },
-          quantity: { type: Type.NUMBER, nullable: true },
-          modifier: { type: Type.STRING, nullable: true },
-          suggestions: {
+          items: {
             type: Type.ARRAY,
-            items: { type: Type.STRING }
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                quantity: { type: Type.NUMBER },
+                modifiers: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING }
+                }
+              },
+              required: ["name", "quantity", "modifiers"]
+            }
           },
-          voice_response: { type: Type.STRING },
-          voice_state: {
-            type: Type.STRING,
-            enum: ["IDLE", "LISTENING", "PROCESSING", "SPEAKING", "EXITING"]
-          },
-          confidence: { type: Type.NUMBER }
+          confidence: { type: Type.NUMBER },
+          voice_response: { type: Type.STRING }
         },
-        required: ["action", "item_name", "quantity", "modifier", "suggestions", "voice_response", "voice_state", "confidence"]
+        required: ["intent", "items", "confidence", "voice_response"]
       }
     }
   });
@@ -128,14 +121,10 @@ export const processVoiceInput = async (
   } catch (error) {
     console.error("Failed to parse AI response:", error);
     return {
-      action: "CLARIFY",
-      item_name: null,
-      quantity: null,
-      modifier: null,
-      suggestions: [],
-      voice_response: "I'm sorry, I didn't quite catch that. Could you repeat?",
-      voice_state: "LISTENING",
-      confidence: 0
+      intent: "unknown",
+      items: [],
+      confidence: 0,
+      voice_response: "Please repeat, I didn't catch that."
     };
   }
 };

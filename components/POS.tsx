@@ -52,7 +52,8 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
   const [isConversationActive, setIsConversationActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [aiStatus, setAiStatus] = useState<{ message: string; type: 'info' | 'success' | 'error' | 'warning' } | null>(null);
-  const [currentVoiceState, setCurrentVoiceState] = useState<'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'EXITING'>('IDLE');
+  const [currentVoiceState, setCurrentVoiceState] = useState<'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'EXECUTING' | 'WAITING_FOR_CONFIRMATION' | 'EXITING'>('IDLE');
+  const [lastInteractionTime, setLastInteractionTime] = useState(Date.now());
 
   const toggleModifier = (mod: Modifier) => {
     setTempSelectedModifiers(prev => 
@@ -184,91 +185,80 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
   };
 
   const handleVoiceCommand = async (command: VoiceCommand) => {
-    const { action, item_name, quantity, modifier, suggestions, voice_response, voice_state } = command;
+    const { intent, items, confidence, voice_response } = command;
 
-    setCurrentVoiceState(voice_state);
+    setLastInteractionTime(Date.now());
 
     if (voice_response) {
-      setAiStatus({ message: voice_response, type: action === 'EXIT' ? 'info' : 'success' });
+      setAiStatus({ message: voice_response, type: intent === 'unknown' ? 'warning' : 'success' });
       
       // Barge-in protection: cancel any existing speech
       window.speechSynthesis.cancel();
       
       const utterance = new SpeechSynthesisUtterance(voice_response);
+      setCurrentVoiceState('SPEAKING');
       utterance.onend = () => {
-        if (action !== 'EXIT') {
+        if (intent !== 'ask_for_sleep') {
           setCurrentVoiceState('LISTENING');
         } else {
-          setCurrentVoiceState('IDLE');
+          setCurrentVoiceState('WAITING_FOR_CONFIRMATION');
         }
       };
       window.speechSynthesis.speak(utterance);
     }
 
-    if (action === 'EXIT') {
-      setIsConversationActive(false);
-      setIsListening(false);
+    if (intent === 'unknown') {
       return;
     }
 
-    if (action === 'CLARIFY') {
+    if (intent === 'ask_for_sleep') {
+      setCurrentVoiceState('WAITING_FOR_CONFIRMATION');
       return;
     }
 
-    if (action === 'SUGGEST_CROSS_SELL') {
-      return;
-    }
+    setCurrentVoiceState('EXECUTING');
 
-    const matchedItem = menuItems.find(i => i.name.toLowerCase() === item_name?.toLowerCase());
+    for (const item of items) {
+      const matchedItem = menuItems.find(i => i.name.toLowerCase() === item.name.toLowerCase());
+      
+      if (!matchedItem) {
+        setAiStatus({ message: `I couldn't find "${item.name}" on the menu.`, type: 'error' });
+        continue;
+      }
 
-    if (!matchedItem && (action === 'ADD_ITEM' || action === 'UPDATE_QTY' || action === 'REMOVE_ITEM')) {
-      setAiStatus({ message: `I couldn't find "${item_name}" on the menu.`, type: 'error' });
-      return;
-    }
-
-    switch (action) {
-      case 'ADD_ITEM':
-        if (matchedItem) {
-          const qtyToAdd = quantity || 1;
-          for (let i = 0; i < qtyToAdd; i++) {
+      switch (intent) {
+        case 'add_item':
+          for (let i = 0; i < (item.quantity || 1); i++) {
             addToCart(matchedItem);
           }
-          setAiStatus({ message: `Added ${qtyToAdd} ${matchedItem.name}(s)`, type: 'success' });
-        }
-        break;
-      case 'UPDATE_QTY':
-        if (matchedItem && quantity !== null) {
+          break;
+        case 'update_quantity':
           const currentItem = cart.find(i => i.id === matchedItem.id);
           if (currentItem) {
-            const delta = quantity - currentItem.quantity;
+            const delta = (item.quantity || 1) - currentItem.quantity;
             updateQuantity(matchedItem.id, delta, currentItem.selected_modifiers);
-            setAiStatus({ message: `Updated ${matchedItem.name} quantity to ${quantity}`, type: 'success' });
           }
-        }
-        break;
-      case 'REMOVE_ITEM':
-        if (matchedItem) {
-          const currentItem = cart.find(i => i.id === matchedItem.id);
-          if (currentItem) {
-            updateQuantity(matchedItem.id, -currentItem.quantity, currentItem.selected_modifiers);
-            setAiStatus({ message: `Removed ${matchedItem.name} from cart`, type: 'success' });
+          break;
+        case 'remove_item':
+          const toRemove = cart.find(i => i.id === matchedItem.id);
+          if (toRemove) {
+            updateQuantity(matchedItem.id, -toRemove.quantity, toRemove.selected_modifiers);
           }
-        }
-        break;
-      case 'ADD_MODIFIER':
-        if (matchedItem && modifier) {
-          const currentItem = cart.find(i => i.id === matchedItem.id);
-          const modToApply = matchedItem.modifiers?.find(m => m.name.toLowerCase() === modifier.toLowerCase());
-          if (currentItem && modToApply) {
-            // This is a bit complex as addToCart handles modifiers via state
-            // For now, let's just show a message or try to apply it if possible
-            setAiStatus({ message: `Applying ${modifier} to ${matchedItem.name}`, type: 'info' });
-            // Logic to apply modifier would go here
-          } else {
-            setAiStatus({ message: `Could not find modifier "${modifier}" for ${matchedItem.name}`, type: 'error' });
-          }
-        }
-        break;
+          break;
+        case 'suggest_cross_sale':
+          // Just showing the voice response is enough for suggestions
+          break;
+        case 'confirm_bill':
+          handleFinalizeAndPrint();
+          break;
+      }
+    }
+
+    // After execution, if not speaking, go back to listening
+    if (window.speechSynthesis.speaking) {
+      setCurrentVoiceState('SPEAKING');
+    } else {
+      setCurrentVoiceState('LISTENING');
     }
   };
 
@@ -284,51 +274,71 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
     recognition.lang = 'en-IN';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    recognition.continuous = true; // Keep listening for wake phrase or commands
+    recognition.continuous = true;
 
-    let silenceTimer: any = null;
+    let idleCheckInterval: any = null;
+    let confirmationTimeout: any = null;
 
-    const resetSilenceTimer = () => {
-      if (silenceTimer) clearTimeout(silenceTimer);
-      silenceTimer = setTimeout(() => {
-        setIsListening(false);
-        recognition.stop();
-        setAiStatus({ message: "Closing voice assistant due to inactivity.", type: 'info' });
-      }, 8000); // 8 seconds silence timeout
+    const resetIdleLogic = () => {
+      setLastInteractionTime(Date.now());
+      if (confirmationTimeout) clearTimeout(confirmationTimeout);
     };
 
     recognition.onstart = () => {
       setIsListening(true);
       setCurrentVoiceState('LISTENING');
-      setAiStatus({ message: "Say 'Hey Papa' to start...", type: 'info' });
-      resetSilenceTimer();
+      setAiStatus({ message: "Listening...", type: 'info' });
+      resetIdleLogic();
+
+      // Start idle check interval
+      idleCheckInterval = setInterval(() => {
+        const now = Date.now();
+        const idleTime = now - lastInteractionTime;
+
+        if (idleTime > 120000 && currentVoiceState !== 'WAITING_FOR_CONFIRMATION' && currentVoiceState !== 'IDLE') {
+          // 2 minutes idle
+          handleVoiceCommand({
+            intent: 'ask_for_sleep',
+            items: [],
+            confidence: 1,
+            voice_response: "Do you need anything else, or should I go to sleep?"
+          });
+
+          // Wait 15 seconds for response
+          confirmationTimeout = setTimeout(() => {
+            setIsListening(false);
+            recognition.stop();
+            setCurrentVoiceState('IDLE');
+            setAiStatus({ message: "Going to sleep due to inactivity.", type: 'info' });
+          }, 15000);
+        }
+      }, 10000); // Check every 10 seconds
     };
 
     recognition.onresult = async (event: any) => {
-      resetSilenceTimer();
-      
-      // Barge-in: Stop AI speaking when user starts talking
+      resetIdleLogic();
       window.speechSynthesis.cancel();
 
-      const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
+      const result = event.results[event.results.length - 1];
+      const transcript = result[0].transcript.trim().toLowerCase();
+      const confidence = result[0].confidence;
+
       setVoiceTranscript(transcript);
 
-      if (transcript.includes('stop') || transcript.includes('cancel') || transcript.includes('exit') || transcript.includes('thank you')) {
+      if (confidence < 0.7) {
+        const utterance = new SpeechSynthesisUtterance("Please repeat, I didn't catch that.");
+        window.speechSynthesis.speak(utterance);
+        setAiStatus({ message: "Please repeat, I didn't catch that.", type: 'warning' });
+        return;
+      }
+
+      if (transcript.includes('stop') || transcript.includes('cancel') || transcript.includes('exit') || transcript.includes('thank you') || transcript.includes('go to sleep')) {
         setIsConversationActive(false);
         setIsListening(false);
         recognition.stop();
         setAiStatus({ message: "Voice assistant stopped.", type: 'info' });
-        setCurrentVoiceState('EXITING');
+        setCurrentVoiceState('IDLE');
         return;
-      }
-
-      // Wake phrase detection
-      if (!isConversationActive && !transcript.includes('hey papa')) {
-        return; // Ignore until wake phrase
-      }
-
-      if (transcript.includes('hey papa')) {
-        setIsConversationActive(true);
       }
 
       setCurrentVoiceState('PROCESSING');
@@ -336,22 +346,20 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
       
       const command = await processVoiceInput(transcript, menuItems);
       await handleVoiceCommand(command);
-
-      if (command.action === 'EXIT') {
-        recognition.stop();
-      }
     };
 
     recognition.onerror = (event: any) => {
       console.error("Speech recognition error:", event.error);
       setIsListening(false);
       setAiStatus({ message: `Error: ${event.error}`, type: 'error' });
-      if (silenceTimer) clearTimeout(silenceTimer);
+      clearInterval(idleCheckInterval);
+      if (confirmationTimeout) clearTimeout(confirmationTimeout);
     };
 
     recognition.onend = () => {
       setIsListening(false);
-      if (silenceTimer) clearTimeout(silenceTimer);
+      clearInterval(idleCheckInterval);
+      if (confirmationTimeout) clearTimeout(confirmationTimeout);
       setTimeout(() => setAiStatus(null), 5000);
     };
 
@@ -669,6 +677,8 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                 currentVoiceState === 'PROCESSING' ? 'bg-orange-50' :
                 currentVoiceState === 'SPEAKING' ? 'bg-emerald-50' :
                 currentVoiceState === 'LISTENING' ? 'bg-indigo-50' :
+                currentVoiceState === 'EXECUTING' ? 'bg-emerald-100' :
+                currentVoiceState === 'WAITING_FOR_CONFIRMATION' ? 'bg-amber-50' :
                 'bg-slate-50'
               }`}>
                 {currentVoiceState === 'LISTENING' ? (
@@ -684,8 +694,12 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                   <Loader2 className="text-orange-600 animate-spin" size={24} />
                 ) : currentVoiceState === 'SPEAKING' ? (
                   <Sparkles className="text-emerald-600 animate-bounce" size={24} />
+                ) : currentVoiceState === 'EXECUTING' ? (
+                  <Check className="text-emerald-600" size={24} />
+                ) : currentVoiceState === 'WAITING_FOR_CONFIRMATION' ? (
+                  <Info className="text-amber-600 animate-pulse" size={24} />
                 ) : (
-                  <Sparkles className="text-slate-400" size={24} />
+                  <MicOff className="text-slate-400" size={24} />
                 )}
               </div>
               <div className="flex-1">
@@ -695,12 +709,16 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                     currentVoiceState === 'LISTENING' ? 'bg-indigo-100 text-indigo-600' :
                     currentVoiceState === 'PROCESSING' ? 'bg-orange-100 text-orange-600' :
                     currentVoiceState === 'SPEAKING' ? 'bg-emerald-100 text-emerald-600' :
+                    currentVoiceState === 'EXECUTING' ? 'bg-emerald-200 text-emerald-800' :
+                    currentVoiceState === 'WAITING_FOR_CONFIRMATION' ? 'bg-amber-100 text-amber-600' :
                     'bg-slate-100 text-slate-400'
                   }`}>
-                    {currentVoiceState}
+                    {currentVoiceState.replace(/_/g, ' ')}
                   </span>
                 </div>
-                <p className="text-sm font-bold text-slate-800">{aiStatus.message}</p>
+                <p className="text-sm font-bold text-slate-800">
+                  {currentVoiceState === 'WAITING_FOR_CONFIRMATION' ? "Do you need anything else?" : aiStatus?.message}
+                </p>
               </div>
               {currentVoiceState === 'LISTENING' && (
                 <div className="flex gap-1">
