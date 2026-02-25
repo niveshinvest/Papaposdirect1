@@ -49,8 +49,10 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
   // Voice Assistant State
   const [isListening, setIsListening] = useState(false);
+  const [isConversationActive, setIsConversationActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [aiStatus, setAiStatus] = useState<{ message: string; type: 'info' | 'success' | 'error' | 'warning' } | null>(null);
+  const [currentVoiceState, setCurrentVoiceState] = useState<'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'EXITING'>('IDLE');
 
   const toggleModifier = (mod: Modifier) => {
     setTempSelectedModifiers(prev => 
@@ -182,16 +184,29 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
   };
 
   const handleVoiceCommand = async (command: VoiceCommand) => {
-    const { action, item_name, quantity, modifier, suggestions, voice_response } = command;
+    const { action, item_name, quantity, modifier, suggestions, voice_response, voice_state } = command;
+
+    setCurrentVoiceState(voice_state);
 
     if (voice_response) {
       setAiStatus({ message: voice_response, type: action === 'EXIT' ? 'info' : 'success' });
-      // Speak the response
+      
+      // Barge-in protection: cancel any existing speech
+      window.speechSynthesis.cancel();
+      
       const utterance = new SpeechSynthesisUtterance(voice_response);
+      utterance.onend = () => {
+        if (action !== 'EXIT') {
+          setCurrentVoiceState('LISTENING');
+        } else {
+          setCurrentVoiceState('IDLE');
+        }
+      };
       window.speechSynthesis.speak(utterance);
     }
 
     if (action === 'EXIT') {
+      setIsConversationActive(false);
       setIsListening(false);
       return;
     }
@@ -284,22 +299,39 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
     recognition.onstart = () => {
       setIsListening(true);
+      setCurrentVoiceState('LISTENING');
       setAiStatus({ message: "Say 'Hey Papa' to start...", type: 'info' });
       resetSilenceTimer();
     };
 
     recognition.onresult = async (event: any) => {
       resetSilenceTimer();
+      
+      // Barge-in: Stop AI speaking when user starts talking
+      window.speechSynthesis.cancel();
+
       const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
       setVoiceTranscript(transcript);
 
-      if (transcript.includes('stop') || transcript.includes('cancel')) {
+      if (transcript.includes('stop') || transcript.includes('cancel') || transcript.includes('exit') || transcript.includes('thank you')) {
+        setIsConversationActive(false);
         setIsListening(false);
         recognition.stop();
         setAiStatus({ message: "Voice assistant stopped.", type: 'info' });
+        setCurrentVoiceState('EXITING');
         return;
       }
 
+      // Wake phrase detection
+      if (!isConversationActive && !transcript.includes('hey papa')) {
+        return; // Ignore until wake phrase
+      }
+
+      if (transcript.includes('hey papa')) {
+        setIsConversationActive(true);
+      }
+
+      setCurrentVoiceState('PROCESSING');
       setAiStatus({ message: `Processing: "${transcript}"`, type: 'info' });
       
       const command = await processVoiceInput(transcript, menuItems);
@@ -627,19 +659,19 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
             exit={{ opacity: 0, scale: 0.9 }}
             className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[60] w-full max-w-md px-4 pointer-events-none"
           >
-            <div className={`bg-white rounded-[2rem] shadow-2xl border-2 p-4 flex items-center gap-4 pointer-events-auto ${
+            <div className={`bg-white rounded-[2rem] shadow-2xl border-2 p-4 flex items-center gap-4 pointer-events-auto transition-colors duration-300 ${
               aiStatus.type === 'success' ? 'border-emerald-500' :
               aiStatus.type === 'error' ? 'border-rose-500' :
               aiStatus.type === 'warning' ? 'border-amber-500' :
               'border-indigo-500'
             }`}>
-              <div className={`p-3 rounded-2xl ${
-                aiStatus.type === 'success' ? 'bg-emerald-50' :
-                aiStatus.type === 'error' ? 'bg-rose-50' :
-                aiStatus.type === 'warning' ? 'bg-amber-50' :
-                'bg-indigo-50'
+              <div className={`p-3 rounded-2xl transition-colors duration-300 ${
+                currentVoiceState === 'PROCESSING' ? 'bg-orange-50' :
+                currentVoiceState === 'SPEAKING' ? 'bg-emerald-50' :
+                currentVoiceState === 'LISTENING' ? 'bg-indigo-50' :
+                'bg-slate-50'
               }`}>
-                {isListening ? (
+                {currentVoiceState === 'LISTENING' ? (
                   <div className="relative">
                     <Mic className="text-indigo-600 animate-pulse" size={24} />
                     <motion.div
@@ -648,20 +680,29 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                       className="absolute inset-0 bg-indigo-400/20 rounded-full"
                     />
                   </div>
+                ) : currentVoiceState === 'PROCESSING' ? (
+                  <Loader2 className="text-orange-600 animate-spin" size={24} />
+                ) : currentVoiceState === 'SPEAKING' ? (
+                  <Sparkles className="text-emerald-600 animate-bounce" size={24} />
                 ) : (
-                  <Sparkles className={
-                    aiStatus.type === 'success' ? 'text-emerald-600' :
-                    aiStatus.type === 'error' ? 'text-rose-600' :
-                    aiStatus.type === 'warning' ? 'text-amber-600' :
-                    'text-indigo-600'
-                  } size={24} />
+                  <Sparkles className="text-slate-400" size={24} />
                 )}
               </div>
               <div className="flex-1">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5">AI Voice Assistant</p>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">PapaPOS Assistant</p>
+                  <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter ${
+                    currentVoiceState === 'LISTENING' ? 'bg-indigo-100 text-indigo-600' :
+                    currentVoiceState === 'PROCESSING' ? 'bg-orange-100 text-orange-600' :
+                    currentVoiceState === 'SPEAKING' ? 'bg-emerald-100 text-emerald-600' :
+                    'bg-slate-100 text-slate-400'
+                  }`}>
+                    {currentVoiceState}
+                  </span>
+                </div>
                 <p className="text-sm font-bold text-slate-800">{aiStatus.message}</p>
               </div>
-              {isListening && (
+              {currentVoiceState === 'LISTENING' && (
                 <div className="flex gap-1">
                   {[1, 2, 3].map(i => (
                     <motion.div
