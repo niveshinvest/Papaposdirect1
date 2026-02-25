@@ -118,7 +118,7 @@ export const cloudOutlets = {
       .upsert({
         ...outlet,
         id: String(outlet.id),
-        company_id,                  // 🔒 ENFORCED
+        company_id:company_id,                  // 🔒 ENFORCED
         updated_by: user_id,
         updated_at: new Date().toISOString()
       });
