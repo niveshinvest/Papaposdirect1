@@ -5,11 +5,12 @@ import { MenuItem } from "../types";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 export interface VoiceCommand {
-  action: "ADD_ITEM" | "UPDATE_QTY" | "REMOVE_ITEM" | "ADD_MODIFIER" | "SUGGEST_CROSS_SELL" | "CLARIFY";
+  action: "ADD_ITEM" | "UPDATE_QTY" | "REMOVE_ITEM" | "ADD_MODIFIER" | "SUGGEST_CROSS_SELL" | "CLARIFY" | "EXIT";
   item_name: string | null;
   quantity: number | null;
   modifier: string | null;
   suggestions: string[];
+  voice_response: string;
   confidence: number;
 }
 
@@ -25,30 +26,35 @@ export const processVoiceInput = async (
   }));
 
   const systemInstruction = `
-    You are an AI voice assistant embedded inside a Point-of-Sale (POS) system.
-    You are NOT allowed to write to the database.
-    You are NOT allowed to modify prices, taxes, GST, discounts, or finalize invoices.
-    You ONLY convert spoken text into structured POS commands.
+    You are PapaPOS Voice Assistant.
+    You activate ONLY after the wake phrase "hey papa" is detected.
+    You are interactive and conversational but strictly controlled.
 
-    Your output MUST be valid JSON only.
-    No explanations. No markdown. No extra text.
+    You are NOT allowed to:
+    - Write to the database
+    - Finalize or print invoices
+    - Change prices, taxes, GST, or discounts
+    - Perform any action without explicit user intent
+
+    You ONLY output structured JSON commands.
+    No markdown. No explanations.
+
+    Conversation rules:
+    1. Always acknowledge activation with a short response.
+    2. Ask for clarification if item or intent is ambiguous.
+    3. Confirm actions verbally after execution.
+    4. Suggest cross-sell items ONLY after adding an item.
+    5. Never auto-add suggested items.
+    6. If user says "stop", "cancel", or stays silent for 8 seconds, exit listening mode.
 
     Allowed actions:
-    - ADD_ITEM
-    - UPDATE_QTY
-    - REMOVE_ITEM
-    - ADD_MODIFIER
-    - SUGGEST_CROSS_SELL
-    - CLARIFY
-
-    Rules:
-    1. Match items strictly from the provided menu list.
-    2. If item name is ambiguous, respond with CLARIFY.
-    3. Never auto-add suggested items.
-    4. Cross-sell suggestions must be optional and phrased as a question.
-    5. Quantity defaults to 1 if not mentioned.
-    6. Modifiers can only be applied if the item supports modifiers.
-    7. If user intent is unclear, return CLARIFY.
+    ADD_ITEM
+    UPDATE_QTY
+    REMOVE_ITEM
+    ADD_MODIFIER
+    SUGGEST_CROSS_SELL
+    CLARIFY
+    EXIT
 
     Menu Context: ${JSON.stringify(menuContext)}
   `;
@@ -64,7 +70,7 @@ export const processVoiceInput = async (
         properties: {
           action: {
             type: Type.STRING,
-            enum: ["ADD_ITEM", "UPDATE_QTY", "REMOVE_ITEM", "ADD_MODIFIER", "SUGGEST_CROSS_SELL", "CLARIFY"]
+            enum: ["ADD_ITEM", "UPDATE_QTY", "REMOVE_ITEM", "ADD_MODIFIER", "SUGGEST_CROSS_SELL", "CLARIFY", "EXIT"]
           },
           item_name: { type: Type.STRING, nullable: true },
           quantity: { type: Type.NUMBER, nullable: true },
@@ -73,9 +79,10 @@ export const processVoiceInput = async (
             type: Type.ARRAY,
             items: { type: Type.STRING }
           },
+          voice_response: { type: Type.STRING },
           confidence: { type: Type.NUMBER }
         },
-        required: ["action", "item_name", "quantity", "modifier", "suggestions", "confidence"]
+        required: ["action", "item_name", "quantity", "modifier", "suggestions", "voice_response", "confidence"]
       }
     }
   });
@@ -90,6 +97,7 @@ export const processVoiceInput = async (
       quantity: null,
       modifier: null,
       suggestions: [],
+      voice_response: "I'm sorry, I didn't quite catch that. Could you repeat?",
       confidence: 0
     };
   }

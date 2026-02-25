@@ -182,18 +182,25 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
   };
 
   const handleVoiceCommand = async (command: VoiceCommand) => {
-    const { action, item_name, quantity, modifier, suggestions } = command;
+    const { action, item_name, quantity, modifier, suggestions, voice_response } = command;
+
+    if (voice_response) {
+      setAiStatus({ message: voice_response, type: action === 'EXIT' ? 'info' : 'success' });
+      // Speak the response
+      const utterance = new SpeechSynthesisUtterance(voice_response);
+      window.speechSynthesis.speak(utterance);
+    }
+
+    if (action === 'EXIT') {
+      setIsListening(false);
+      return;
+    }
 
     if (action === 'CLARIFY') {
-      setAiStatus({ message: "I'm not sure what you mean. Could you clarify?", type: 'warning' });
       return;
     }
 
     if (action === 'SUGGEST_CROSS_SELL') {
-      setAiStatus({ 
-        message: `Would you like to add ${suggestions.join(' or ')}?`, 
-        type: 'info' 
-      });
       return;
     }
 
@@ -262,29 +269,57 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
     recognition.lang = 'en-IN';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
+    recognition.continuous = true; // Keep listening for wake phrase or commands
+
+    let silenceTimer: any = null;
+
+    const resetSilenceTimer = () => {
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(() => {
+        setIsListening(false);
+        recognition.stop();
+        setAiStatus({ message: "Closing voice assistant due to inactivity.", type: 'info' });
+      }, 8000); // 8 seconds silence timeout
+    };
 
     recognition.onstart = () => {
       setIsListening(true);
-      setAiStatus({ message: "Listening...", type: 'info' });
+      setAiStatus({ message: "Say 'Hey Papa' to start...", type: 'info' });
+      resetSilenceTimer();
     };
 
     recognition.onresult = async (event: any) => {
-      const transcript = event.results[0][0].transcript;
+      resetSilenceTimer();
+      const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
       setVoiceTranscript(transcript);
+
+      if (transcript.includes('stop') || transcript.includes('cancel')) {
+        setIsListening(false);
+        recognition.stop();
+        setAiStatus({ message: "Voice assistant stopped.", type: 'info' });
+        return;
+      }
+
       setAiStatus({ message: `Processing: "${transcript}"`, type: 'info' });
       
       const command = await processVoiceInput(transcript, menuItems);
       await handleVoiceCommand(command);
+
+      if (command.action === 'EXIT') {
+        recognition.stop();
+      }
     };
 
     recognition.onerror = (event: any) => {
       console.error("Speech recognition error:", event.error);
       setIsListening(false);
       setAiStatus({ message: `Error: ${event.error}`, type: 'error' });
+      if (silenceTimer) clearTimeout(silenceTimer);
     };
 
     recognition.onend = () => {
       setIsListening(false);
+      if (silenceTimer) clearTimeout(silenceTimer);
       setTimeout(() => setAiStatus(null), 5000);
     };
 
