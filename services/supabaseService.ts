@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabase as defaultClient } from '../lib/supabaseClient';
 
+/* ============================================================================
+   SUPABASE CLIENT (RE-INITIALIZABLE)
+============================================================================ */
 let supabaseClient = defaultClient;
 export const getSupabase = () => supabaseClient;
 
@@ -15,222 +18,311 @@ export const testConnection = async (url: string, key: string) => {
   return { success: true };
 };
 
-/* ===============================
-   AUTH & TENANT CONTEXT
-================================ */
-export const authService = {
-  async getCurrentUser() {
-    const { data } = await supabaseClient.auth.getSession();
-    return data.session?.user || null;
-  },
+/* ============================================================================
+   TENANT CONTEXT (🔥 SINGLE SOURCE OF TRUTH)
+   ❗ NO SERVICE MAY BYPASS THIS
+============================================================================ */
+export const tenantContext = {
+  async require() {
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (!user) throw new Error('Unauthorized');
 
-  async getProfile() {
-    const user = await this.getCurrentUser();
-    if (!user) return null;
-
-    const { data, error } = await supabaseClient
+    const { data: profile, error } = await supabaseClient
       .from('profiles')
       .select('*')
       .eq('id', user.id)
       .single();
 
-    if (error) throw error;
-    return data;
+    if (error || !profile?.company_id) {
+      throw new Error('TENANT VIOLATION: company_id missing');
+    }
+
+    return {
+      user_id: profile.id,
+      company_id: profile.company_id,
+      outlet_id: profile.outlet_id || null
+    };
   }
 };
 
-/* ===============================
-   MENU SERVICE (COMPANY + OUTLET)
-================================ */
-export const menuService = {
-  async fetchCategories(outletId: string) {
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error('Unauthorized');
+/* ============================================================================
+   AUTH SERVICE
+============================================================================ */
+export const authService = {
+  async getCurrentUser() {
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    return user;
+  },
+
+  async getProfile() {
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (!user) return null;
+
+    const { data: profile, error } = await supabaseClient
+      .from('profiles')
+      .select('*, companies(*)')
+      .eq('id', user.id)
+      .single();
+
+    if (error) return null;
+    return {
+      ...profile,
+      email: user.email,
+      user_id: profile.id // for backward compatibility with tenantContext
+    };
+  },
+
+  async createCompany(name: string, passedUser?: any) {
+    const user = passedUser || await this.getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+
+    const { data: company, error: cError } = await supabaseClient
+      .from('companies')
+      .insert({ name, owner_id: user.id })
+      .select().single();
+
+    if (cError) throw cError;
+
+    const { error: pError } = await supabaseClient.from('profiles').upsert({ 
+      id: user.id,
+      company_id: company.id, 
+      role: 'OWNER'
+    });
+
+    if (pError) throw pError;
+    return company;
+  }
+};
+
+/* ============================================================================
+   OUTLETS (🔥 FIXED – COMPANY ENFORCED)
+============================================================================ */
+export const cloudOutlets = {
+  async fetchAll() {
+    const { company_id } = await tenantContext.require();
 
     const { data, error } = await supabaseClient
-      .from('menu_categories')
+      .from('outlets')
       .select('*')
-      .eq('company_id', profile.company_id)     // 🔒 ADDED
-      .eq('outlet_id', outletId)                 // 🔒 ADDED
-      .order('sort_order');
+      .eq('company_id', company_id);
 
-    if (error) throw error;
+    if (error) throw new Error(error.message);
     return data || [];
   },
 
-  async fetchItems(outletId: string) {
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error('Unauthorized');
+  async upsert(outlet: any) {
+    const { company_id, user_id } = await tenantContext.require();
 
-    const { data, error } = await supabaseClient
+    const { error } = await supabaseClient
+      .from('outlets')
+      .upsert({
+        ...outlet,
+        id: String(outlet.id),
+        company_id,                  // 🔒 ENFORCED
+        updated_by: user_id,
+        updated_at: new Date().toISOString()
+      });
+
+    if (error) throw new Error(error.message);
+  },
+
+  async delete(id: string) {
+    const { company_id } = await tenantContext.require();
+
+    const { error } = await supabaseClient
+      .from('outlets')
+      .delete()
+      .eq('id', String(id))
+      .eq('company_id', company_id); // 🔒 SAFETY FILTER
+
+    if (error) throw new Error(error.message);
+  }
+};
+
+/* ============================================================================
+   MENU SERVICE (COMPANY + OUTLET HARD LOCKED)
+============================================================================ */
+export const menuService = {
+  async fetchCategories(outlet_id?: string) {
+    const { company_id } = await tenantContext.require();
+
+    let query = supabaseClient
+      .from('menu_categories')
+      .select('*')
+      .eq('company_id', company_id);
+
+    if (outlet_id) {
+      query = query.eq('outlet_id', outlet_id);
+    }
+
+    const { data, error } = await query.order('sort_order');
+
+    if (error) throw new Error(error.message);
+    return data || [];
+  },
+
+  async fetchItems(outlet_id?: string) {
+    const { company_id } = await tenantContext.require();
+
+    let query = supabaseClient
       .from('menu_items')
       .select('*, menu_categories(name)')
-      .eq('company_id', profile.company_id)     // 🔒 ADDED
-      .eq('outlet_id', outletId);               // 🔒 ADDED
+      .eq('company_id', company_id);
 
+    if (outlet_id) {
+      query = query.eq('outlet_id', outlet_id);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw new Error(error.message);
+    return data || [];
+  },
+
+  async fetchTables(outlet_id: string) {
+    const { company_id } = await tenantContext.require();
+    const { data, error } = await supabaseClient
+      .from('tables')
+      .select('*')
+      .eq('company_id', company_id)
+      .eq('outlet_id', outlet_id);
     if (error) throw error;
     return data || [];
   },
 
   async saveCategory(category: any) {
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error('Unauthorized');
-
-    const payload = {
-      ...category,
-      company_id: profile.company_id,           // 🔒 ADDED
-      outlet_id: category.outlet_id
-    };
-
+    const { company_id } = await tenantContext.require();
     const { data, error } = await supabaseClient
       .from('menu_categories')
-      .upsert(payload)
-      .select()
-      .single();
-
+      .upsert({ ...category, company_id })
+      .select().single();
     if (error) throw error;
     return data;
   },
 
   async saveItem(item: any) {
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error('Unauthorized');
-
-    const payload = {
-      ...item,
-      company_id: profile.company_id,            // 🔒 ADDED
-      outlet_id: item.outlet_id,
-      created_by: profile.id
-    };
+    const { company_id, user_id } = await tenantContext.require();
 
     const { data, error } = await supabaseClient
       .from('menu_items')
-      .upsert(payload)
+      .upsert({
+        ...item,
+        company_id,          // 🔒
+        created_by: user_id,
+        updated_at: new Date().toISOString()
+      })
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new Error(error.message);
     return data;
   }
 };
 
-/* ===============================
-   OUTLETS (COMPANY SCOPED)
-================================ */
-export const cloudOutlets = {
-  async fetchAll() {
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error('Unauthorized');
-
-    const { data, error } = await supabaseClient
-      .from('outlets')
-      .select('*')
-      .eq('company_id', profile.company_id);   // 🔒 ADDED
-
-    if (error) throw error;
-    return data;
-  },
-
-  async upsert(outletData: any) {
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error('Unauthorized');
-
-    const payload = {
-      ...outletData,
-      company_id: profile.company_id            // 🔒 ADDED
-    };
-
-    const { error } = await supabaseClient
-      .from('outlets')
-      .upsert(payload);
-
-    if (error) throw error;
-  },
-
-  async delete(id: string) {
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error('Unauthorized');
-
-    const { error } = await supabaseClient
-      .from('outlets')
-      .delete()
-      .eq('id', id)
-      .eq('company_id', profile.company_id);    // 🔒 ADDED
-
-    if (error) throw error;
-  }
-};
-
-/* ===============================
-   INVENTORY (STRICT TENANCY)
-================================ */
+/* ============================================================================
+   INVENTORY (STRICT TENANT + OUTLET)
+============================================================================ */
 export const inventoryService = {
-  async fetchLedger(outletId: string) {
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error('Unauthorized');
-
+  async fetchBatches(outlet_id: string) {
+    const { company_id } = await tenantContext.require();
     const { data, error } = await supabaseClient
-      .from('inventory_ledger')
+      .from('inventory_batches')
       .select('*')
-      .eq('company_id', profile.company_id)     // 🔒 ADDED
-      .eq('outlet_id', outletId)
-      .order('created_at', { ascending: false });
-
+      .eq('company_id', company_id)
+      .eq('outlet_id', outlet_id);
     if (error) throw error;
     return data || [];
   },
 
-  async recordStockIn(payload: any) {
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error('Unauthorized');
+  async fetchLedger(outlet_id: string) {
+    const { company_id } = await tenantContext.require();
+
+    const { data, error } = await supabaseClient
+      .from('inventory_ledger')
+      .select('*')
+      .eq('company_id', company_id)
+      .eq('outlet_id', outlet_id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw new Error(error.message);
+    return data || [];
+  },
+
+  async record(payload: any) {
+    const { company_id, user_id } = await tenantContext.require();
+    if (!payload.outlet_id) {
+      throw new Error('Safety Block: outlet_id missing');
+    }
 
     const { error } = await supabaseClient
       .from('inventory_ledger')
       .insert({
         ...payload,
-        company_id: profile.company_id,          // 🔒 ADDED
-        outlet_id: payload.outlet_id,
-        transaction_type: 'STOCK_IN'
+        company_id,            // 🔒
+        created_by: user_id,
+        created_at: new Date().toISOString()
       });
 
-    if (error) throw error;
+    if (error) throw new Error(error.message);
+  },
+
+  async recordStockIn(payload: any) {
+    const { qty, ...rest } = payload;
+    return this.record({ ...rest, qty_change: qty, transaction_type: 'STOCK_IN' });
+  },
+
+  async recordWastage(payload: any) {
+    const { qty, ...rest } = payload;
+    return this.record({ ...rest, qty_change: -qty, transaction_type: 'WASTAGE' });
   }
 };
 
-/* ===============================
-   ROLES & TEAM (COMPANY SAFE)
-================================ */
-export const roleService = {
-  async fetchTeam() {
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error('Unauthorized');
-
-    const { data, error } = await supabaseClient
-      .from('profiles')
-      .select('*')
-      .eq('company_id', profile.company_id);   // 🔒 ADDED
-
-    if (error) throw error;
-    return data || [];
-  }
-};
-
-/* ===============================
-   PAYMENT MODES (OUTLET SAFE)
-================================ */
+/* ============================================================================
+   PAYMENT MODES (OUTLET + COMPANY)
+============================================================================ */
 export const paymentService = {
-  async fetchActiveModes(outletId: string) {
-    const profile = await authService.getProfile();
-    if (!profile) throw new Error('Unauthorized');
+  async fetchActiveModes(outlet_id: string) {
+    const { company_id } = await tenantContext.require();
 
     const { data, error } = await supabaseClient
       .from('payment_modes')
       .select('*')
-      .eq('company_id', profile.company_id)    // 🔒 ADDED
-      .eq('outlet_id', outletId)
-      .eq('is_active', true);
+      .eq('company_id', company_id)
+      .eq('outlet_id', outlet_id)
+      .eq('is_active', true)
+      .order('priority_order');
 
+    if (error) throw new Error(error.message);
+    return data || [];
+  },
+
+  async fetchDefaultMode(outlet_id: string) {
+    const { company_id } = await tenantContext.require();
+    const { data, error } = await supabaseClient
+      .from('payment_modes')
+      .select('*')
+      .eq('company_id', company_id)
+      .eq('outlet_id', outlet_id)
+      .eq('is_default', true)
+      .maybeSingle();
     if (error) throw error;
+    return data;
+  }
+};
+
+/* ============================================================================
+   TEAM / ROLES (ORG LEVEL)
+============================================================================ */
+export const roleService = {
+  async fetchTeam() {
+    const { company_id } = await tenantContext.require();
+
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('*')
+      .eq('company_id', company_id);
+
+    if (error) throw new Error(error.message);
     return data || [];
   }
 };
