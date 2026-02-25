@@ -15,6 +15,7 @@ import { paymentService } from '../services/supabaseService';
 import { db } from '../services/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { processVoiceInput, VoiceCommand } from '../services/voiceAssistantService';
+import { GeminiLiveService } from '../services/GeminiLiveService';
 import { motion, AnimatePresence } from 'motion/react';
 
 // --- Price Integrity Contract ---
@@ -54,6 +55,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
   const [aiStatus, setAiStatus] = useState<{ message: string; type: 'info' | 'success' | 'error' | 'warning' } | null>(null);
   const [currentVoiceState, setCurrentVoiceState] = useState<'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'EXECUTING' | 'WAITING_FOR_CONFIRMATION' | 'EXITING'>('IDLE');
   const [lastInteractionTime, setLastInteractionTime] = useState(Date.now());
+  const [liveService, setLiveService] = useState<GeminiLiveService | null>(null);
 
   const toggleModifier = (mod: Modifier) => {
     setTempSelectedModifiers(prev => 
@@ -184,84 +186,6 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
     if (window.innerWidth > 1024 && !isCartOpen) setIsCartOpen(true);
   };
 
-  const handleVoiceCommand = async (command: VoiceCommand) => {
-    const { intent, items, confidence, voice_response } = command;
-
-    setLastInteractionTime(Date.now());
-
-    if (voice_response) {
-      setAiStatus({ message: voice_response, type: intent === 'unknown' ? 'warning' : 'success' });
-      
-      // Barge-in protection: cancel any existing speech
-      window.speechSynthesis.cancel();
-      
-      const utterance = new SpeechSynthesisUtterance(voice_response);
-      setCurrentVoiceState('SPEAKING');
-      utterance.onend = () => {
-        if (intent !== 'ask_for_sleep') {
-          setCurrentVoiceState('LISTENING');
-        } else {
-          setCurrentVoiceState('WAITING_FOR_CONFIRMATION');
-        }
-      };
-      window.speechSynthesis.speak(utterance);
-    }
-
-    if (intent === 'unknown') {
-      return;
-    }
-
-    if (intent === 'ask_for_sleep') {
-      setCurrentVoiceState('WAITING_FOR_CONFIRMATION');
-      return;
-    }
-
-    setCurrentVoiceState('EXECUTING');
-
-    for (const item of items) {
-      const matchedItem = menuItems.find(i => i.name.toLowerCase() === item.name.toLowerCase());
-      
-      if (!matchedItem) {
-        setAiStatus({ message: `I couldn't find "${item.name}" on the menu.`, type: 'error' });
-        continue;
-      }
-
-      switch (intent) {
-        case 'add_item':
-          for (let i = 0; i < (item.quantity || 1); i++) {
-            addToCart(matchedItem);
-          }
-          break;
-        case 'update_quantity':
-          const currentItem = cart.find(i => i.id === matchedItem.id);
-          if (currentItem) {
-            const delta = (item.quantity || 1) - currentItem.quantity;
-            updateQuantity(matchedItem.id, delta, currentItem.selected_modifiers);
-          }
-          break;
-        case 'remove_item':
-          const toRemove = cart.find(i => i.id === matchedItem.id);
-          if (toRemove) {
-            updateQuantity(matchedItem.id, -toRemove.quantity, toRemove.selected_modifiers);
-          }
-          break;
-        case 'suggest_cross_sale':
-          // Just showing the voice response is enough for suggestions
-          break;
-        case 'confirm_bill':
-          handleFinalizeAndPrint();
-          break;
-      }
-    }
-
-    // After execution, if not speaking, go back to listening
-    if (window.speechSynthesis.speaking) {
-      setCurrentVoiceState('SPEAKING');
-    } else {
-      setCurrentVoiceState('LISTENING');
-    }
-  };
-
   const startListening = () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
       alert("Speech recognition is not supported in this browser.");
@@ -276,96 +200,117 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
     recognition.maxAlternatives = 1;
     recognition.continuous = true;
 
-    let idleCheckInterval: any = null;
-    let confirmationTimeout: any = null;
-
-    const resetIdleLogic = () => {
-      setLastInteractionTime(Date.now());
-      if (confirmationTimeout) clearTimeout(confirmationTimeout);
-    };
-
     recognition.onstart = () => {
       setIsListening(true);
       setCurrentVoiceState('LISTENING');
-      setAiStatus({ message: "Listening...", type: 'info' });
-      resetIdleLogic();
-
-      // Start idle check interval
-      idleCheckInterval = setInterval(() => {
-        const now = Date.now();
-        const idleTime = now - lastInteractionTime;
-
-        if (idleTime > 120000 && currentVoiceState !== 'WAITING_FOR_CONFIRMATION' && currentVoiceState !== 'IDLE') {
-          // 2 minutes idle
-          handleVoiceCommand({
-            intent: 'ask_for_sleep',
-            items: [],
-            confidence: 1,
-            voice_response: "Do you need anything else, or should I go to sleep?"
-          });
-
-          // Wait 15 seconds for response
-          confirmationTimeout = setTimeout(() => {
-            setIsListening(false);
-            recognition.stop();
-            setCurrentVoiceState('IDLE');
-            setAiStatus({ message: "Going to sleep due to inactivity.", type: 'info' });
-          }, 15000);
-        }
-      }, 10000); // Check every 10 seconds
+      setAiStatus({ message: "Say 'Hey Papa' to start...", type: 'info' });
     };
 
     recognition.onresult = async (event: any) => {
-      resetIdleLogic();
-      window.speechSynthesis.cancel();
-
       const result = event.results[event.results.length - 1];
       const transcript = result[0].transcript.trim().toLowerCase();
-      const confidence = result[0].confidence;
 
-      setVoiceTranscript(transcript);
-
-      if (confidence < 0.7) {
-        const utterance = new SpeechSynthesisUtterance("Please repeat, I didn't catch that.");
-        window.speechSynthesis.speak(utterance);
-        setAiStatus({ message: "Please repeat, I didn't catch that.", type: 'warning' });
-        return;
-      }
-
-      if (transcript.includes('stop') || transcript.includes('cancel') || transcript.includes('exit') || transcript.includes('thank you') || transcript.includes('go to sleep')) {
-        setIsConversationActive(false);
-        setIsListening(false);
+      if (transcript.includes('hey papa')) {
         recognition.stop();
-        setAiStatus({ message: "Voice assistant stopped.", type: 'info' });
-        setCurrentVoiceState('IDLE');
-        return;
+        startGeminiLive();
       }
-
-      setCurrentVoiceState('PROCESSING');
-      setAiStatus({ message: `Processing: "${transcript}"`, type: 'info' });
-      
-      const command = await processVoiceInput(transcript, menuItems);
-      await handleVoiceCommand(command);
     };
 
     recognition.onerror = (event: any) => {
-      console.error("Speech recognition error:", event.error);
+      console.error("Wake word recognition error:", event.error);
       setIsListening(false);
       setAiStatus({ message: `Error: ${event.error}`, type: 'error' });
-      clearInterval(idleCheckInterval);
-      if (confirmationTimeout) clearTimeout(confirmationTimeout);
     };
 
     recognition.onend = () => {
-      setIsListening(false);
-      clearInterval(idleCheckInterval);
-      if (confirmationTimeout) clearTimeout(confirmationTimeout);
-      setTimeout(() => setAiStatus(null), 5000);
+      if (!liveService && isListening) {
+        setIsListening(false);
+        setCurrentVoiceState('IDLE');
+      }
     };
 
     recognition.start();
   };
 
+  const stopListening = () => {
+    if (liveService) {
+      liveService.disconnect();
+      setLiveService(null);
+    }
+    setIsListening(false);
+    setCurrentVoiceState('IDLE');
+    setAiStatus(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (liveService) liveService.disconnect();
+    };
+  }, [liveService]);
+
+  const startGeminiLive = () => {
+    const service = new GeminiLiveService(menuItems, {
+      onStatusChange: (status) => {
+        setAiStatus({ message: status, type: 'info' });
+        if (status === 'Listening...') setCurrentVoiceState('LISTENING');
+      },
+      onTranscript: (text, isUser) => {
+        if (isUser) setVoiceTranscript(text);
+      },
+      onToolCall: (name, args) => {
+        handleLiveToolCall(name, args);
+      },
+      onError: (error) => {
+        setAiStatus({ message: error, type: 'error' });
+        setIsListening(false);
+      },
+      onClose: () => {
+        setIsListening(false);
+        setCurrentVoiceState('IDLE');
+        setLiveService(null);
+      }
+    });
+
+    setLiveService(service);
+    service.connect();
+  };
+
+  const handleLiveToolCall = (name: string, args: any) => {
+    setCurrentVoiceState('EXECUTING');
+    
+    switch (name) {
+      case 'addItem':
+        const itemToAdd = menuItems.find(i => i.name.toLowerCase() === args.name.toLowerCase());
+        if (itemToAdd) {
+          const qty = args.quantity || 1;
+          for (let i = 0; i < qty; i++) addToCart(itemToAdd);
+          setAiStatus({ message: `Added ${qty} ${itemToAdd.name}`, type: 'success' });
+        }
+        break;
+      case 'removeItem':
+        const itemToRemove = menuItems.find(i => i.name.toLowerCase() === args.name.toLowerCase());
+        if (itemToRemove) {
+          const cartItem = cart.find(i => i.id === itemToRemove.id);
+          if (cartItem) updateQuantity(itemToRemove.id, -cartItem.quantity, cartItem.selected_modifiers);
+          setAiStatus({ message: `Removed ${itemToRemove.name}`, type: 'success' });
+        }
+        break;
+      case 'updateQuantity':
+        const itemToUpdate = menuItems.find(i => i.name.toLowerCase() === args.name.toLowerCase());
+        if (itemToUpdate) {
+          const cartItem = cart.find(i => i.id === itemToUpdate.id);
+          if (cartItem) {
+            const delta = args.quantity - cartItem.quantity;
+            updateQuantity(itemToUpdate.id, delta, cartItem.selected_modifiers);
+            setAiStatus({ message: `Updated ${itemToUpdate.name} to ${args.quantity}`, type: 'success' });
+          }
+        }
+        break;
+      case 'confirmBill':
+        handleFinalizeAndPrint();
+        break;
+    }
+  };
   const updateQuantity = (id: string, delta: number, modifiers?: Modifier[]) => {
     setCart(prev => prev.map(item => {
       const match = item.id === id && JSON.stringify(item.selected_modifiers || []) === JSON.stringify(modifiers || []);
@@ -636,7 +581,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input type="text" placeholder="Quick search menu..." className="w-full pl-12 pr-12 py-3 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none text-sm font-bold shadow-sm" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             <button 
-              onClick={startListening}
+              onClick={isListening ? stopListening : startListening}
               className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl transition-all ${
                 isListening ? 'bg-rose-500 text-white animate-pulse' : 'bg-slate-100 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600'
               }`}
