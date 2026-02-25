@@ -6,7 +6,7 @@ import {
   X, Utensils, Layers, Info, WifiOff, Wifi,
   MonitorPlay, ChevronRight, Check, AlertCircle, Loader2,
   ChevronLeft, ShoppingBag, Printer, QrCode, User, CreditCard, Wallet, Banknote,
-  Settings2, Mic, MicOff, Sparkles
+  Settings2, Mic, MicOff, Sparkles, Maximize, Minimize
 } from 'lucide-react';
 import { salesService } from '../services/salesService';
 import { kitchenService } from '../services/kitchenService';
@@ -50,6 +50,18 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
   // Voice Assistant State
   const [isListening, setIsListening] = useState(false);
+  const [isPWA, setIsPWA] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true));
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().then(() => setIsFullscreen(false));
+      }
+    }
+  };
   const [isConversationActive, setIsConversationActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [aiStatus, setAiStatus] = useState<{ message: string; type: 'info' | 'success' | 'error' | 'warning' } | null>(null);
@@ -77,6 +89,21 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
   // --- Cart State ---
   const [cart, setCart] = useState<ValidatedCartItem[]>([]);
+
+  useEffect(() => {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+    setIsPWA(!!isStandalone);
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (cart.length > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [cart]);
 
   // Offline-First Data (Dexie)
   const menuItems = useLiveQuery(() => 
@@ -594,6 +621,13 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                <button key={w} onClick={() => setPaperWidth(w as any)} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${paperWidth === w ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-400'}`}>{w}</button>
             ))}
           </div>
+          <button 
+            onClick={toggleFullscreen}
+            className="p-3 bg-slate-100 text-slate-400 rounded-2xl hover:bg-indigo-50 hover:text-indigo-600 transition-all shadow-sm"
+            title="Toggle Fullscreen"
+          >
+            {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+          </button>
         </div>
 
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
