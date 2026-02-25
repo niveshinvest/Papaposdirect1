@@ -207,7 +207,7 @@ export const menuService = {
       .from('menu_items')
       .upsert({
         ...item,
-        company_id,          // 🔒
+        company_id:company_id,          // 🔒
         created_by: user_id,
         updated_at: new Date().toISOString()
       })
