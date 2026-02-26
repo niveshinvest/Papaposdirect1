@@ -12,6 +12,7 @@ import { salesService } from '../services/salesService';
 import { kitchenService } from '../services/kitchenService';
 import { sessionService } from '../services/sessionService';
 import { paymentService } from '../services/supabaseService';
+import { printerService } from '../services/printerService';
 import { db } from '../services/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { processVoiceInput, VoiceCommand } from '../services/voiceAssistantService';
@@ -45,6 +46,8 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
   const [priceError, setPriceError] = useState<string | null>(null);
   const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>('80mm');
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [printerStatus, setPrinterStatus] = useState<{ available: boolean; name: string; type: string } | null>(null);
+  const [printReady, setPrintReady] = useState(false);
   const [modifierItem, setModifierItem] = useState<any | null>(null);
   const [tempSelectedModifiers, setTempSelectedModifiers] = useState<Modifier[]>([]);
 
@@ -426,13 +429,38 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
     };
   }, [cart, activeOutlet, buyerState]);
 
-  const handlePrint = () => {
-    const printEl = document.getElementById('print-area');
-    if (printEl) {
-      window.print();
-      return true;
+  useEffect(() => {
+    const checkPrinter = async () => {
+      const status = await printerService.checkAvailability();
+      setPrinterStatus(status);
+    };
+    checkPrinter();
+  }, []);
+
+  // Race-condition safety: Ensure invoice is rendered before allowing print
+  useEffect(() => {
+    if (showPrintPreview) {
+      setPrintReady(false);
+      // Wait for DOM to settle
+      requestAnimationFrame(() => {
+        setTimeout(() => setPrintReady(true), 500);
+      });
     }
-    return false;
+  }, [showPrintPreview, lastInvoice]);
+
+  const handlePrint = async () => {
+    if (!lastInvoice || !printReady) return;
+    
+    const result = await printerService.printInvoice(lastInvoice, { 
+      paperWidth, 
+      silent: true 
+    });
+
+    if (result.success) {
+      console.log(`Print Success: ${result.method}`);
+    } else {
+      alert(`Print Failed: ${result.error}`);
+    }
   };
 
   const handleFinalizeAndPrint = async () => {
@@ -521,6 +549,13 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
       setLastInvoice({ ...invoice, items: totals.processedItems });
       setShowPrintPreview(true);
+      
+      // Auto-trigger print if silent mode is supported and enabled
+      if (printerStatus?.available && printerService.getPlatform() !== 'BROWSER') {
+        // Wait for printReady state to be true (handled by useEffect)
+        // In a real production app, we might wait for the flag or use a callback
+      }
+
       setCart([]);
       setSelectedTable(null);
 
@@ -835,7 +870,15 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
            </div>
            <div className="flex justify-between items-end pt-8 border-t border-white/10">
               <div><p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Grand Payable</p><span className="font-black text-5xl text-orange-500 tracking-tighter">₹{totals.grandTotal}</span></div>
-              <div className={`flex items-center gap-2 px-3 py-1 rounded-lg border ${isOnline ? 'border-emerald-500/20 text-emerald-500' : 'border-rose-500/20 text-rose-500'}`}>{isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}<span className="text-[9px] font-black uppercase">{isOnline ? 'Sync' : 'Local'}</span></div>
+              <div className="flex flex-col items-end gap-2">
+                <div className={`flex items-center gap-2 px-3 py-1 rounded-lg border ${isOnline ? 'border-emerald-500/20 text-emerald-500' : 'border-rose-500/20 text-rose-500'}`}>{isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}<span className="text-[9px] font-black uppercase">{isOnline ? 'Sync' : 'Local'}</span></div>
+                {printerStatus && (
+                  <div className={`flex items-center gap-2 px-3 py-1 rounded-lg border ${printerStatus.available ? 'border-indigo-500/20 text-indigo-400' : 'border-rose-500/20 text-rose-400'}`}>
+                    <Printer size={14} />
+                    <span className="text-[9px] font-black uppercase">{printerStatus.available ? printerStatus.name : 'Offline'}</span>
+                  </div>
+                )}
+              </div>
            </div>
            
            <button 
@@ -1051,10 +1094,10 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                    Close
                  </button>
                  <button 
-                  onClick={() => { handlePrint(); setShowPrintPreview(false); }}
-                  className="flex-1 py-5 bg-indigo-600 text-white rounded-[24px] font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-200 flex items-center justify-center gap-3"
+                  onClick={handlePrint} disabled={!printReady}
+                  className="flex-1 py-5 bg-indigo-600 text-white rounded-[24px] font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-200 flex items-center justify-center gap-3 disabled:opacity-50"
                  >
-                   <Printer size={18} /> Print Invoice
+                   {printReady ? <><Printer size={18} /> Print Invoice</> : <><Loader2 className="animate-spin" size={18} /> Preparing...</>}
                  </button>
               </div>
            </div>

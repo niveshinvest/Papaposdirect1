@@ -10,26 +10,38 @@
   }
 }
 
-/* THERMAL PRINT STYLES */
+/* THERMAL PRINT STYLES (ENTERPRISE GRADE) */
 @media print {
+  html, body {
+    height: auto;
+    background: #fff !important;
+    color: #000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
   body * {
     visibility: hidden;
   }
+
   #print-area, #print-area * {
     visibility: visible;
   }
+
   #print-area {
     position: absolute;
     left: 0;
     top: 0;
-    width: 100%;
+    width: 100% !important;
+    max-width: 100% !important;
     display: block !important;
-    padding: 0;
-    margin: 0;
-    background: white;
-    color: black;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
     font-family: 'Courier New', Courier, monospace;
     font-size: 12px;
+    line-height: 1.2;
   }
   
   .no-print {
@@ -39,6 +51,14 @@
   @page {
     margin: 0;
     size: auto;
+  }
+
+  /* Prevent background bleed and UI elements */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
   }
 }
 

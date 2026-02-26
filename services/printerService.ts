@@ -25,6 +25,126 @@ export interface DiscoveredDevice {
 
 export const printerService = {
   /**
+   * PLATFORM DETECTION
+   */
+  getPlatform(): 'ANDROID' | 'ELECTRON' | 'BROWSER' {
+    if ((window as any).PapaPrint) return 'ANDROID';
+    if ((window as any).ipcRenderer) return 'ELECTRON';
+    return 'BROWSER';
+  },
+
+  /**
+   * PRINTER AVAILABILITY DETECTION
+   */
+  async checkAvailability(): Promise<{ available: boolean; name: string; type: string }> {
+    const platform = this.getPlatform();
+    
+    if (platform === 'ELECTRON') {
+      try {
+        const printers = await (window as any).ipcRenderer.invoke('get-printers');
+        const defaultPrinter = printers.find((p: any) => p.isDefault) || printers[0];
+        return { 
+          available: !!defaultPrinter, 
+          name: defaultPrinter?.name || 'No Printer Found',
+          type: 'System Printer (Electron)'
+        };
+      } catch (e) {
+        return { available: false, name: 'Electron Service Error', type: 'N/A' };
+      }
+    }
+
+    if (platform === 'ANDROID') {
+      // Android bridge assumes paired Bluetooth printers are handled native-side
+      return { available: true, name: 'Paired BT Printer', type: 'ESC/POS (Native)' };
+    }
+
+    // Browser Fallback
+    return { available: true, name: 'System Dialog', type: 'Browser Print' };
+  },
+
+  /**
+   * CORE PRINT CONTROLLER
+   * Routes the print request to the appropriate platform handler
+   */
+  async printInvoice(invoice: any, options: { silent?: boolean; paperWidth?: string } = {}) {
+    const platform = this.getPlatform();
+    const { silent = true } = options;
+
+    console.log(`Print Controller: Routing to ${platform} (Silent: ${silent})`);
+
+    try {
+      if (platform === 'ANDROID') {
+        // Native Bridge: window.PapaPrint.print(json)
+        (window as any).PapaPrint.print(JSON.stringify(invoice));
+        return { success: true, method: 'ANDROID_BRIDGE' };
+      }
+
+      if (platform === 'ELECTRON') {
+        // Electron IPC: ipcRenderer.invoke('print-invoice', payload)
+        const html = this.generateInvoiceHTML(invoice, options.paperWidth || '80mm');
+        const result = await (window as any).ipcRenderer.invoke('print-invoice', { 
+          html, 
+          silent 
+        });
+        return { ...result, method: 'ELECTRON_IPC' };
+      }
+
+      // Browser Fallback: window.print()
+      // Note: Browser cannot do silent printing. It will always show dialog.
+      window.print();
+      return { success: true, method: 'BROWSER_SYSTEM' };
+
+    } catch (error: any) {
+      console.error("Print Controller Error:", error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * HTML GENERATOR (For Electron/Browser)
+   */
+  generateInvoiceHTML(invoice: any, width: string): string {
+    return `
+      <html>
+        <head>
+          <style>
+            body { 
+              width: ${width === '80mm' ? '300px' : '220px'}; 
+              margin: 0; 
+              padding: 10px; 
+              font-family: 'Courier New', Courier, monospace; 
+              font-size: 12px;
+            }
+            .center { text-align: center; }
+            .bold { font-weight: bold; }
+            .divider { border-bottom: 1px dashed #000; margin: 5px 0; }
+            table { width: 100%; }
+            .right { text-align: right; }
+          </style>
+        </head>
+        <body>
+          <div class="center bold">${invoice.seller_legal_name}</div>
+          <div class="center">${invoice.seller_trade_name}</div>
+          <div class="divider"></div>
+          <div>INV: ${invoice.invoice_number}</div>
+          <div>DATE: ${new Date(invoice.invoice_date).toLocaleString()}</div>
+          <div class="divider"></div>
+          <table>
+            ${invoice.items.map((item: any) => `
+              <tr>
+                <td>${item.name} x ${item.quantity}</td>
+                <td class="right">${item.total_amount.toFixed(2)}</td>
+              </tr>
+            `).join('')}
+          </table>
+          <div class="divider"></div>
+          <div class="bold">TOTAL: ${invoice.grand_total.toFixed(2)}</div>
+        </body>
+      </html>
+    `;
+  },
+
+  /**
    * DISCOVERY ENGINE: Triggers native system pickers (BT/USB) or network scan (WiFi)
    */
   async discoverDevices(type: 'bluetooth' | 'wifi' | 'usb'): Promise<DiscoveredDevice[]> {
