@@ -3,6 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { getSupabase, authService } from "./supabaseService";
 
 export type RecipeStatus = 'DRAFT' | 'QUEUED' | 'FINALIZED' | 'REJECTED';
+export type RecipeSource = 'AI' | 'MANUAL';
 
 export interface RecipeEntry {
   id: string;
@@ -18,8 +19,11 @@ export interface RecipeEntry {
     }>;
     steps: string[];
     total_cost: number;
+    yield?: number;
+    notes?: string;
   };
   ai_prompt?: string;
+  source: RecipeSource;
   status: RecipeStatus;
   created_by?: string;
   created_at: string;
@@ -32,7 +36,7 @@ export const recipeService = {
    * - Validate company_id & outlet_id
    * - Call AI provider
    * - Parse structured recipe
-   * - INSERT recipe with status = 'DRAFT'
+   * - INSERT recipe with status = 'DRAFT', source = 'AI'
    * - RETURN saved record
    */
   async generateRecipe(itemName: string, outletId: string): Promise<RecipeEntry> {
@@ -94,6 +98,7 @@ export const recipeService = {
         item_name: itemName,
         recipe_json: recipeJson,
         ai_prompt: prompt,
+        source: 'AI',
         status: 'DRAFT',
         created_by: (await client.auth.getUser()).data.user?.id
       };
@@ -117,6 +122,73 @@ export const recipeService = {
       console.error("RECIPE_SERVICE: GENERATION_FAILED", error);
       throw error;
     }
+  },
+
+  /**
+   * 1.5 createManualRecipe(payload)
+   * - Validate company_id & outlet_id
+   * - Validate ingredients, steps, quantities
+   * - Build recipe_json from form input
+   * - INSERT recipe with:
+   *     source = 'MANUAL'
+   *     status = 'DRAFT'
+   * - RETURN saved record
+   */
+  async createManualRecipe(payload: {
+    itemName: string;
+    outletId: string;
+    ingredients: Array<{ name: string; quantity: number; unit: string; cost: number }>;
+    steps: string[];
+    yield: number;
+    notes?: string;
+  }): Promise<RecipeEntry> {
+    console.log(`RECIPE_SERVICE: START_MANUAL_CREATION for ${payload.itemName}`);
+
+    const client = getSupabase();
+    if (!client) throw new Error("Supabase client not initialized");
+
+    const profile = await authService.getProfile();
+    if (!profile?.company_id) throw new Error("Company ID missing from profile");
+
+    // Basic validation
+    if (!payload.itemName) throw new Error("Item name is mandatory");
+    if (!payload.ingredients || payload.ingredients.length === 0) throw new Error("At least one ingredient is required");
+
+    const totalCost = payload.ingredients.reduce((sum, ing) => sum + (ing.cost || 0), 0);
+
+    const recipeJson = {
+      ingredients: payload.ingredients,
+      steps: payload.steps,
+      total_cost: totalCost,
+      yield: payload.yield,
+      notes: payload.notes
+    };
+
+    const insertPayload = {
+      company_id: profile.company_id,
+      outlet_id: payload.outletId,
+      item_name: payload.itemName,
+      recipe_json: recipeJson,
+      source: 'MANUAL',
+      status: 'DRAFT',
+      created_by: (await client.auth.getUser()).data.user?.id
+    };
+
+    console.log("RECIPE_SERVICE: BEFORE_DB_INSERT_MANUAL", insertPayload);
+
+    const { data, error } = await client
+      .from('recipes')
+      .insert(insertPayload)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("RECIPE_SERVICE: DB_INSERT_MANUAL_ERROR", error);
+      throw new Error(error.message);
+    }
+
+    console.log("RECIPE_SERVICE: AFTER_DB_INSERT_MANUAL", data);
+    return data;
   },
 
   /**

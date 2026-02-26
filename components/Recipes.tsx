@@ -4,7 +4,7 @@ import {
   ChefHat, Search, Trash2, X, 
   CheckCircle, ArrowRight, 
   PlusCircle, Loader2, Sparkles, Wand2, ShieldAlert, BadgeCheck, Save,
-  Clock, Lock, CheckSquare
+  Clock, Lock, CheckSquare, Edit3, Plus, Minus
 } from 'lucide-react';
 import { menuService } from '../services/supabaseService';
 import { recipeService, RecipeEntry, RecipeStatus } from '../services/recipeService';
@@ -25,8 +25,18 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [isAIRecipeOpen, setIsAIRecipeOpen] = useState(false);
+  const [isManualRecipeOpen, setIsManualRecipeOpen] = useState(false);
   const [selectedTarget, setSelectedTarget] = useState<MenuItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Manual Form State
+  const [manualForm, setManualForm] = useState({
+    itemName: '',
+    ingredients: [{ name: '', quantity: 0, unit: 'gram', cost: 0 }],
+    steps: [''],
+    yield: 1,
+    notes: ''
+  });
 
   useEffect(() => {
     if (activeOutlet) {
@@ -62,7 +72,6 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
       const newRecipe = await recipeService.generateRecipe(selectedTarget.name, activeOutlet.id);
       console.log("RECIPES_UI: GENERATE_SUCCESS", newRecipe);
       
-      // Refresh data to show the new draft
       await loadData();
       setIsAIRecipeOpen(false);
       setSelectedTarget(null);
@@ -71,6 +80,29 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
       alert(`Generation failed: ${error.message}`);
     } finally {
       setIsGeneratingAI(false);
+    }
+  };
+
+  const handleSaveManualRecipe = async () => {
+    if (!activeOutlet) return;
+    try {
+      console.log("RECIPES_UI: TRIGGER_MANUAL_SAVE", manualForm);
+      await recipeService.createManualRecipe({
+        ...manualForm,
+        outletId: activeOutlet.id
+      });
+      await loadData();
+      setIsManualRecipeOpen(false);
+      setManualForm({
+        itemName: '',
+        ingredients: [{ name: '', quantity: 0, unit: 'gram', cost: 0 }],
+        steps: [''],
+        yield: 1,
+        notes: ''
+      });
+    } catch (error: any) {
+      console.error("RECIPES_UI: MANUAL_SAVE_ERROR", error);
+      alert(`Save failed: ${error.message}`);
     }
   };
 
@@ -113,14 +145,19 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
     const isFinalized = recipe.status === 'FINALIZED';
     const isQueued = recipe.status === 'QUEUED';
     const isDraft = recipe.status === 'DRAFT';
+    const isAI = recipe.source === 'AI';
 
     return (
       <div key={recipe.id} className={`bg-white rounded-[32px] border shadow-sm p-6 space-y-4 transition-all hover:shadow-md ${isFinalized ? 'border-emerald-100 bg-emerald-50/5' : isQueued ? 'border-indigo-100 bg-indigo-50/5' : 'border-slate-100'}`}>
         <div className="flex justify-between items-start">
           <div>
             <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight">{recipe.item_name}</h3>
-            <div className="flex items-center gap-2 mt-1">
-              {isDraft && <span className="px-2 py-0.5 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase tracking-widest border border-amber-100 flex items-center gap-1"><Sparkles size={10} /> AI Draft</span>}
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              {isDraft && (
+                <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest border flex items-center gap-1 ${isAI ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                  {isAI ? <><Sparkles size={10} /> AI Recipe</> : <><Edit3 size={10} /> Manual Recipe</>}
+                </span>
+              )}
               {isQueued && <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-lg text-[8px] font-black uppercase tracking-widest border border-indigo-100 flex items-center gap-1"><Clock size={10} /> Queued</span>}
               {isFinalized && <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase tracking-widest border border-emerald-100 flex items-center gap-1"><BadgeCheck size={10} /> Finalized</span>}
             </div>
@@ -205,12 +242,20 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
           <h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase">Recipe Engineering</h2>
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">AI-Assisted Production Planning</p>
         </div>
-        <button 
-          onClick={() => setIsAIRecipeOpen(true)}
-          className="bg-indigo-600 text-white px-10 py-5 rounded-[24px] font-black text-sm shadow-2xl shadow-indigo-200 flex items-center gap-3 hover:scale-105 transition-all active:scale-95"
-        >
-          <Sparkles size={20} /> Generate Recipe
-        </button>
+        <div className="flex gap-4">
+          <button 
+            onClick={() => setIsAIRecipeOpen(true)}
+            className="bg-indigo-600 text-white px-8 py-4 rounded-[24px] font-black text-xs shadow-xl shadow-indigo-200 flex items-center gap-3 hover:scale-105 transition-all active:scale-95"
+          >
+            <Sparkles size={18} /> Generate with AI
+          </button>
+          <button 
+            onClick={() => setIsManualRecipeOpen(true)}
+            className="bg-white border-2 border-slate-900 text-slate-900 px-8 py-4 rounded-[24px] font-black text-xs shadow-xl flex items-center gap-3 hover:scale-105 transition-all active:scale-95"
+          >
+            <Edit3 size={18} /> Create Manually
+          </button>
+        </div>
       </div>
 
       <div className="space-y-12">
@@ -318,6 +363,202 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
                       className="flex-[2] py-5 bg-indigo-600 text-white rounded-[24px] font-black uppercase tracking-widest text-sm shadow-2xl shadow-indigo-100 flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
                     >
                        {isGeneratingAI ? <Loader2 className="animate-spin" size={20} /> : <><Sparkles size={18} /> Generate Recipe</>}
+                    </button>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Manual Recipe Modal */}
+      {isManualRecipeOpen && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+           <div className="bg-white rounded-[48px] w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-300 max-h-[90vh]">
+              <div className="p-8 border-b bg-slate-900 text-white flex justify-between items-center shrink-0">
+                 <div className="flex items-center gap-4">
+                    <div className="p-3 bg-white/10 rounded-2xl"><Edit3 size={24} /></div>
+                    <div>
+                      <h3 className="text-xl font-black uppercase tracking-tight">Manual Recipe Creation</h3>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Engineer your dish manually</p>
+                    </div>
+                 </div>
+                 <button onClick={() => setIsManualRecipeOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-all"><X size={24} /></button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-10 space-y-10">
+                 {/* Item Name */}
+                 <div className="space-y-4">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dish Name</label>
+                    <input 
+                      type="text"
+                      placeholder="Enter dish name (e.g. Butter Chicken)"
+                      className="w-full px-6 py-5 bg-slate-50 border border-slate-100 rounded-[24px] font-bold text-slate-900 outline-none focus:ring-2 focus:ring-slate-900"
+                      value={manualForm.itemName}
+                      onChange={(e) => setManualForm({...manualForm, itemName: e.target.value})}
+                    />
+                 </div>
+
+                 {/* Ingredients */}
+                 <div className="space-y-6">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ingredients</label>
+                      <button 
+                        onClick={() => setManualForm({
+                          ...manualForm, 
+                          ingredients: [...manualForm.ingredients, { name: '', quantity: 0, unit: 'gram', cost: 0 }]
+                        })}
+                        className="flex items-center gap-2 text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:text-indigo-700"
+                      >
+                        <Plus size={14} /> Add Ingredient
+                      </button>
+                    </div>
+                    <div className="space-y-3">
+                      {manualForm.ingredients.map((ing, idx) => (
+                        <div key={idx} className="flex gap-3 items-center animate-in slide-in-from-left-2">
+                          <input 
+                            type="text"
+                            placeholder="Ingredient"
+                            className="flex-[2] px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-slate-900"
+                            value={ing.name}
+                            onChange={(e) => {
+                              const newIngs = [...manualForm.ingredients];
+                              newIngs[idx].name = e.target.value;
+                              setManualForm({...manualForm, ingredients: newIngs});
+                            }}
+                          />
+                          <input 
+                            type="number"
+                            placeholder="Qty"
+                            className="flex-1 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-slate-900"
+                            value={ing.quantity || ''}
+                            onChange={(e) => {
+                              const newIngs = [...manualForm.ingredients];
+                              newIngs[idx].quantity = parseFloat(e.target.value) || 0;
+                              setManualForm({...manualForm, ingredients: newIngs});
+                            }}
+                          />
+                          <select 
+                            className="flex-1 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-slate-900"
+                            value={ing.unit}
+                            onChange={(e) => {
+                              const newIngs = [...manualForm.ingredients];
+                              newIngs[idx].unit = e.target.value;
+                              setManualForm({...manualForm, ingredients: newIngs});
+                            }}
+                          >
+                            <option value="gram">Gram</option>
+                            <option value="kg">KG</option>
+                            <option value="ml">ML</option>
+                            <option value="litre">Litre</option>
+                            <option value="unit">Unit</option>
+                          </select>
+                          <input 
+                            type="number"
+                            placeholder="Cost"
+                            className="flex-1 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-slate-900"
+                            value={ing.cost || ''}
+                            onChange={(e) => {
+                              const newIngs = [...manualForm.ingredients];
+                              newIngs[idx].cost = parseFloat(e.target.value) || 0;
+                              setManualForm({...manualForm, ingredients: newIngs});
+                            }}
+                          />
+                          {manualForm.ingredients.length > 1 && (
+                            <button 
+                              onClick={() => setManualForm({
+                                ...manualForm,
+                                ingredients: manualForm.ingredients.filter((_, i) => i !== idx)
+                              })}
+                              className="p-2 text-slate-300 hover:text-rose-500"
+                            >
+                              <Minus size={18} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                 </div>
+
+                 {/* Steps */}
+                 <div className="space-y-6">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Preparation Steps</label>
+                      <button 
+                        onClick={() => setManualForm({
+                          ...manualForm, 
+                          steps: [...manualForm.steps, '']
+                        })}
+                        className="flex items-center gap-2 text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:text-indigo-700"
+                      >
+                        <Plus size={14} /> Add Step
+                      </button>
+                    </div>
+                    <div className="space-y-3">
+                      {manualForm.steps.map((step, idx) => (
+                        <div key={idx} className="flex gap-3 items-start animate-in slide-in-from-left-2">
+                          <span className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center font-black text-xs text-slate-400 shrink-0 mt-2">{idx + 1}</span>
+                          <textarea 
+                            placeholder="Describe step..."
+                            className="flex-1 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-slate-900 min-h-[80px]"
+                            value={step}
+                            onChange={(e) => {
+                              const newSteps = [...manualForm.steps];
+                              newSteps[idx] = e.target.value;
+                              setManualForm({...manualForm, steps: newSteps});
+                            }}
+                          />
+                          {manualForm.steps.length > 1 && (
+                            <button 
+                              onClick={() => setManualForm({
+                                ...manualForm,
+                                steps: manualForm.steps.filter((_, i) => i !== idx)
+                              })}
+                              className="p-2 text-slate-300 hover:text-rose-500 mt-2"
+                            >
+                              <Minus size={18} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                 </div>
+
+                 {/* Yield & Notes */}
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Yield / Portions</label>
+                      <input 
+                        type="number"
+                        className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-[20px] font-bold text-slate-900 outline-none focus:ring-2 focus:ring-slate-900"
+                        value={manualForm.yield}
+                        onChange={(e) => setManualForm({...manualForm, yield: parseFloat(e.target.value) || 1})}
+                      />
+                    </div>
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Internal Notes</label>
+                      <input 
+                        type="text"
+                        className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-[20px] font-bold text-slate-900 outline-none focus:ring-2 focus:ring-slate-900"
+                        value={manualForm.notes}
+                        onChange={(e) => setManualForm({...manualForm, notes: e.target.value})}
+                      />
+                    </div>
+                 </div>
+              </div>
+
+              <div className="p-10 border-t bg-slate-50 flex justify-between items-center shrink-0">
+                 <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Calculated Cost</p>
+                    <h4 className="text-2xl font-black text-slate-900">₹{manualForm.ingredients.reduce((s, i) => s + (i.cost || 0), 0).toFixed(0)}</h4>
+                 </div>
+                 <div className="flex gap-4">
+                    <button onClick={() => setIsManualRecipeOpen(false)} className="px-8 py-4 bg-white border border-slate-200 text-slate-400 rounded-2xl font-black uppercase tracking-widest text-[10px]">Cancel</button>
+                    <button 
+                      onClick={handleSaveManualRecipe}
+                      disabled={!manualForm.itemName || manualForm.ingredients.some(i => !i.name)}
+                      className="px-12 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-all disabled:opacity-30"
+                    >
+                      Save Draft
                     </button>
                  </div>
               </div>
