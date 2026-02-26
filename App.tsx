@@ -181,7 +181,7 @@ const App: React.FC = () => {
         <Route path="/dashboard" element={authState.user ? wrap(<Dashboard activeOutletId={activeOutlet?.id} />, ViewMode.DASHBOARD) : <Navigate to="/auth" />} />
         <Route path="/pos" element={authState.user ? wrap(<POS org={authState.org} activeOutlet={activeOutlet} currentUser={authState.user} />, ViewMode.POS) : <Navigate to="/auth" />} />
         <Route path="/inventory" element={authState.user ? wrap(<Inventory activeOutlet={activeOutlet} />, ViewMode.INVENTORY) : <Navigate to="/auth" />} />
-        <Route path="/recipes" element={authState.user ? wrap(<Recipes inventoryItems={[]} menuItems={[]} recipes={[]} onSaveRecipe={async () => {}} onDeleteRecipe={async () => {}} onBulkDeleteRecipes={async () => {}} />, ViewMode.RECIPES) : <Navigate to="/auth" />} />
+        <Route path="/recipes" element={authState.user ? wrap(<Recipes activeOutlet={activeOutlet} />, ViewMode.RECIPES) : <Navigate to="/auth" />} />
         <Route path="/menu_management" element={authState.user ? wrap(<MenuManagement activeOutlet={activeOutlet} />, ViewMode.MENU_MANAGEMENT) : <Navigate to="/auth" />} />
         <Route path="/outlets" element={authState.user ? wrap(<Outlets />, ViewMode.OUTLETS) : <Navigate to="/auth" />} />
         <Route path="/user_management" element={authState.user ? wrap(<UserManagement />, ViewMode.USER_MANAGEMENT) : <Navigate to="/auth" />} />
