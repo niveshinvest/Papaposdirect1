@@ -5,12 +5,12 @@ import {
   Save, Camera, Trash2, Plus, Banknote, CreditCard as CardIcon, 
   Smartphone as UpiIcon, Check, Zap, Database, RefreshCw, 
   HardDrive, Shield, Cloud, Link, AlertTriangle, CheckCircle2, Loader2, FileCode, Server,
-  Printer, Network, Bluetooth, Usb, Edit2, X, Search, Cpu, Activity, Clock, ArrowUpCircle, Layers, MoveRight, LogOut, ShieldCheck, Wifi, Cable,
+  Printer as PrinterIcon, Network, Bluetooth, Usb, Edit2, X, Search, Cpu, Activity, Clock, ArrowUpCircle, Layers, MoveRight, LogOut, ShieldCheck, Wifi, Cable,
   ChevronRight, Bell, Mail, MessageSquare, BrainCircuit, ShieldAlert, Wallet, ListFilter
 } from 'lucide-react';
 import { Organization, PrinterConfig, Outlet, NotificationPrefs, PaymentMode, PaymentModeType } from '../types';
 import { db } from '../services/db';
-import { printerService, PrinterRegistryEntry, DiscoveredDevice } from '../services/printerService';
+import { printerService, Printer, DiscoveredDevice } from '../services/printerService';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { initSupabase, testConnection, getSupabase, authService, paymentService } from '../services/supabaseService';
 import { getDatabaseVersion, applyMigration, getMigrationFile, MigrationStatus } from '../services/migrationService';
@@ -27,7 +27,7 @@ interface SettingsProps {
 
 const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, activeOutlet }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
-  const [registryPrinters, setRegistryPrinters] = useState<PrinterRegistryEntry[]>([]);
+  const [registryPrinters, setRegistryPrinters] = useState<Printer[]>([]);
   const [paymentModes, setPaymentModes] = useState<PaymentMode[]>([]);
   const [loading, setLoading] = useState(false);
   const [isRegistryModalOpen, setIsRegistryModalOpen] = useState(false);
@@ -58,11 +58,11 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
   });
 
   // Discovery-driven Printer Form
-  const [registryForm, setRegistryForm] = useState<Omit<PrinterRegistryEntry, 'id' | 'company_id'>>({
+  const [registryForm, setRegistryForm] = useState<Partial<Printer>>({
     name: '',
-    printer_type: 'wifi',
-    connection_info: {},
-    roles: ['KOT'],
+    printer_type: 'LAN',
+    connection_hint: '',
+    is_default: false,
     is_active: true,
     outlet_id: activeOutlet?.id || ''
   });
@@ -77,7 +77,7 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
 
   useEffect(() => {
     if (activeOutlet && activeTab === 'hardware') {
-      loadRegistry();
+      loadPrinters();
     }
     if (activeOutlet && activeTab === 'payments') {
       loadPaymentModes();
@@ -161,11 +161,11 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
     }
   };
 
-  const loadRegistry = async () => {
+  const loadPrinters = async () => {
     if (!activeOutlet) return;
     setLoading(true);
     try {
-      const data = await printerService.fetchRegistry(activeOutlet.id);
+      const data = await printerService.fetchPrinters(activeOutlet.id);
       setRegistryPrinters(data);
     } catch (e) {
       console.error(e);
@@ -187,7 +187,7 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
   };
 
   const startHardwarePairing = async () => {
-    if (registryForm.printer_type === 'wifi') {
+    if (registryForm.printer_type === 'LAN') {
       setIsScanning(true);
       setDiscoveredDevices([]);
       const results = await printerService.discoverDevices('wifi');
@@ -195,7 +195,7 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
       setIsScanning(false);
     } else {
       const results = await printerService.discoverDevices(
-        registryForm.printer_type === 'bluetooth' ? 'bluetooth' : 'usb'
+        registryForm.printer_type === 'BLUETOOTH' ? 'bluetooth' : 'usb'
       );
       
       if (results.length > 0) {
@@ -210,46 +210,54 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
     setRegistryForm({
       ...registryForm,
       name: device.name,
-      connection_info: {
-        ip: device.type === 'wifi' ? device.technical_id : undefined,
-        mac: device.type === 'bluetooth' ? device.technical_id : undefined,
-        usb_name: device.type === 'usb' ? device.technical_id : undefined,
-        device_id: device.technical_id
-      }
+      connection_hint: device.technical_id
     });
     setDiscoveredDevices([]);
   };
 
-  const handleSaveRegistry = async (e: React.FormEvent) => {
+  const handleSavePrinter = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeOutlet) return;
-    if (!registryForm.connection_info.device_id) return alert("Search and select a hardware device first.");
+    if (!registryForm.connection_hint) return alert("Search and select a hardware device first.");
     
     setLoading(true);
     try {
-      await printerService.saveToRegistry({ ...registryForm, outlet_id: activeOutlet.id });
-      await loadRegistry();
+      await printerService.addPrinter({ ...registryForm, outlet_id: activeOutlet.id });
+      await loadPrinters();
       setIsRegistryModalOpen(false);
       setRegistryForm({
         name: '',
-        printer_type: 'wifi',
-        connection_info: {},
-        roles: ['KOT'],
+        printer_type: 'LAN',
+        connection_hint: '',
+        is_default: false,
         is_active: true,
         outlet_id: activeOutlet.id
       });
-    } catch (e) {
-      alert("Failed to save printer to registry.");
+    } catch (e: any) {
+      alert(`Failed to save printer: ${e.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const deleteRegistryItem = async (id: string) => {
+  const handleSetDefault = async (printerId: string) => {
+    if (!activeOutlet) return;
+    setLoading(true);
+    try {
+      await printerService.setDefaultPrinter(printerId, activeOutlet.id);
+      await loadPrinters();
+    } catch (e: any) {
+      alert(`Failed to set default: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deletePrinter = async (id: string) => {
     if (!confirm("Remove this hardware from outlet registry?")) return;
     try {
-      await printerService.deleteFromRegistry(id);
-      await loadRegistry();
+      await printerService.deletePrinter(id);
+      await loadPrinters();
     } catch (e) {
       alert("Delete failed.");
     }
@@ -483,50 +491,67 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
     </div>
   );
 
-  const renderHardware = () => (
-     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <div className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm space-y-10">
-           <div className="flex justify-between items-center">
-              <div>
-                 <h3 className="text-2xl font-black text-slate-900 tracking-tight">Printer Registry</h3>
-                 <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Cloud-synchronized peripheral management</p>
-              </div>
-              <button 
-                onClick={() => setIsRegistryModalOpen(true)}
-                className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg"
-              >
-                <Plus size={18} /> Register Hardware
-              </button>
-           </div>
+   const renderHardware = () => (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+         <div className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm space-y-10">
+            <div className="flex justify-between items-center">
+               <div>
+                  <h3 className="text-2xl font-black text-slate-900 tracking-tight">Printer Registry</h3>
+                  <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Cloud-synchronized peripheral management</p>
+               </div>
+               <button 
+                 onClick={() => setIsRegistryModalOpen(true)}
+                 className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg"
+               >
+                 <Plus size={18} /> Register Hardware
+               </button>
+            </div>
 
-           <div className="space-y-4">
-              {registryPrinters.length === 0 ? (
-                <div className="py-20 flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-100 rounded-[32px]">
-                   <Printer size={48} className="opacity-20 mb-4" />
-                   <p className="font-black uppercase text-xs">No hardware registered</p>
-                </div>
-              ) : (
-                registryPrinters.map(p => (
-                  <div key={p.id} className="flex items-center justify-between p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                     <div className="flex items-center gap-4">
-                        <div className="p-3 bg-white rounded-2xl shadow-sm">
-                           {p.printer_type === 'wifi' ? <Network size={20} className="text-indigo-500" /> : <Bluetooth size={20} className="text-blue-500" />}
-                        </div>
-                        <div>
-                           <p className="font-black text-slate-800 text-sm">{p.name}</p>
-                           <p className="text-[9px] font-bold text-slate-400 uppercase">{p.roles.join(' & ')} • {p.printer_type}</p>
-                        </div>
-                     </div>
-                     <button onClick={() => deleteRegistryItem(p.id!)} className="p-2 text-slate-300 hover:text-rose-500 transition-all">
-                        <Trash2 size={18} />
-                     </button>
-                  </div>
-                ))
-              )}
-           </div>
-        </div>
-     </div>
-  );
+            <div className="space-y-4">
+               {registryPrinters.length === 0 ? (
+                 <div className="py-20 flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-100 rounded-[32px]">
+                    <PrinterIcon size={48} className="opacity-20 mb-4" />
+                    <p className="font-black uppercase text-xs">No hardware registered</p>
+                 </div>
+               ) : (
+                 registryPrinters.map(p => (
+                   <div key={p.id} className={`flex items-center justify-between p-6 rounded-3xl border transition-all ${p.is_default ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100'}`}>
+                      <div className="flex items-center gap-4">
+                         <div className="p-3 bg-white rounded-2xl shadow-sm">
+                            {p.printer_type === 'LAN' ? <Network size={20} className="text-indigo-500" /> : 
+                             p.printer_type === 'BLUETOOTH' ? <Bluetooth size={20} className="text-blue-500" /> :
+                             p.printer_type === 'USB' ? <Usb size={20} className="text-slate-500" /> :
+                             <Cpu size={20} className="text-slate-400" />}
+                         </div>
+                         <div>
+                            <p className="font-black text-slate-800 text-sm">{p.name}</p>
+                            <div className="flex items-center gap-2">
+                               <span className="text-[9px] font-bold text-slate-400 uppercase">{p.printer_type} • {p.connection_hint}</span>
+                               {p.is_default && <span className="text-[8px] font-black text-indigo-600 uppercase bg-indigo-100 px-1.5 rounded">Default</span>}
+                            </div>
+                         </div>
+                      </div>
+                      <div className="flex gap-2">
+                         {!p.is_default && (
+                           <button 
+                             onClick={() => handleSetDefault(p.id!)}
+                             className="p-2 text-slate-300 hover:text-indigo-600 transition-all"
+                             title="Set as Default"
+                           >
+                              <Zap size={18} />
+                           </button>
+                         )}
+                         <button onClick={() => deletePrinter(p.id!)} className="p-2 text-slate-300 hover:text-rose-500 transition-all">
+                            <Trash2 size={18} />
+                         </button>
+                      </div>
+                   </div>
+                 ))
+               )}
+            </div>
+         </div>
+      </div>
+   );
 
   return (
     <div className="p-8 space-y-10 pb-32 max-w-7xl mx-auto animate-in fade-in duration-700">
@@ -564,6 +589,100 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
            </div>
         )}
       </div>
+
+      {/* Printer Registry Modal */}
+      {isRegistryModalOpen && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
+           <div className="bg-white rounded-[56px] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+              <div className="p-10 bg-slate-900 text-white flex justify-between items-center">
+                 <div>
+                    <h3 className="text-2xl font-black tracking-tight uppercase">Register Hardware</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Peripheral Provisioning</p>
+                 </div>
+                 <button onClick={() => setIsRegistryModalOpen(false)} className="p-3 hover:bg-white/10 rounded-full transition-all"><X size={28} /></button>
+              </div>
+              
+              <form onSubmit={handleSavePrinter} className="p-10 space-y-8">
+                 <div className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                       {(['LAN', 'BLUETOOTH', 'USB', 'SYSTEM'] as const).map(type => (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => setRegistryForm({...registryForm, printer_type: type, connection_hint: ''})}
+                            className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-2 transition-all ${registryForm.printer_type === type ? 'bg-indigo-50 border-indigo-600 text-indigo-600' : 'bg-slate-50 border-transparent text-slate-400'}`}
+                          >
+                             {type === 'LAN' && <Network size={20} />}
+                             {type === 'BLUETOOTH' && <Bluetooth size={20} />}
+                             {type === 'USB' && <Usb size={20} />}
+                             {type === 'SYSTEM' && <Cpu size={20} />}
+                             <span className="text-[10px] font-black uppercase tracking-widest">{type}</span>
+                          </button>
+                       ))}
+                    </div>
+
+                    <div className="space-y-4">
+                       <button 
+                         type="button"
+                         onClick={startHardwarePairing}
+                         disabled={isScanning}
+                         className="w-full py-4 bg-indigo-50 text-indigo-600 rounded-2xl font-black uppercase tracking-widest text-[10px] border-2 border-dashed border-indigo-200 hover:bg-indigo-100 transition-all flex items-center justify-center gap-2"
+                       >
+                          {isScanning ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
+                          {isScanning ? 'Scanning Network...' : `Search for ${registryForm.printer_type} Devices`}
+                       </button>
+
+                       {discoveredDevices.length > 0 && (
+                          <div className="space-y-2 max-h-40 overflow-y-auto scrollbar-hide">
+                             {discoveredDevices.map(device => (
+                                <button
+                                  key={device.technical_id}
+                                  type="button"
+                                  onClick={() => handleSelectDevice(device)}
+                                  className="w-full p-4 bg-slate-50 hover:bg-slate-100 rounded-xl flex items-center justify-between transition-all"
+                                >
+                                   <div className="text-left">
+                                      <p className="font-bold text-slate-800 text-xs">{device.name}</p>
+                                      <p className="text-[9px] text-slate-400 font-mono">{device.technical_id}</p>
+                                   </div>
+                                   <ChevronRight size={16} className="text-slate-300" />
+                                </button>
+                             ))}
+                          </div>
+                       )}
+                    </div>
+
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Printer Name</label>
+                       <input 
+                         required
+                         className="w-full px-6 py-4 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-indigo-500" 
+                         placeholder="e.g. Main Counter / Kitchen 1" 
+                         value={registryForm.name}
+                         onChange={e => setRegistryForm({...registryForm, name: e.target.value})}
+                       />
+                    </div>
+
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Connection Hint (IP/MAC/ID)</label>
+                       <input 
+                         required
+                         className="w-full px-6 py-4 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-indigo-500 font-mono" 
+                         placeholder="192.168.1.100" 
+                         value={registryForm.connection_hint}
+                         onChange={e => setRegistryForm({...registryForm, connection_hint: e.target.value})}
+                       />
+                    </div>
+                 </div>
+
+                 <button type="submit" disabled={loading} className="w-full py-6 bg-slate-900 text-white rounded-[28px] font-black uppercase tracking-widest text-sm shadow-xl flex items-center justify-center gap-2">
+                    {loading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />} 
+                    Finalize Registration
+                 </button>
+              </form>
+           </div>
+        </div>
+      )}
 
       {/* Payment Mode Modal */}
       {isPaymentModalOpen && (

@@ -1,19 +1,18 @@
 
 import { getSupabase, authService } from './supabaseService';
 
-export interface PrinterRegistryEntry {
+export interface Printer {
   id?: string;
-  name: string;
-  printer_type: 'bluetooth' | 'wifi' | 'wired';
-  connection_info: {
-    ip?: string;
-    mac?: string;
-    usb_name?: string;
-    device_id?: string;
-  };
-  roles: ('BILL' | 'KOT')[];
-  is_active: boolean;
+  company_id?: string;
   outlet_id: string;
+  name: string;
+  printer_type: 'BLUETOOTH' | 'USB' | 'LAN' | 'SYSTEM';
+  connection_hint?: string;
+  is_default: boolean;
+  is_active: boolean;
+  last_seen_at?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface DiscoveredDevice {
@@ -195,46 +194,100 @@ export const printerService = {
     }
   },
 
-  async fetchRegistry(outletId: string): Promise<PrinterRegistryEntry[]> {
+  async fetchPrinters(outletId: string): Promise<Printer[]> {
     const client = getSupabase();
     if (!client) return [];
+    
+    const profile = await authService.getProfile();
+    if (!profile?.company_id) throw new Error("Company ID missing from profile");
+
     const { data, error } = await client
-      .from('printers_registry')
+      .from('printers')
       .select('*')
+      .eq('company_id', profile.company_id)
       .eq('outlet_id', outletId)
+      .eq('is_active', true)
       .order('created_at');
+
     if (error) throw new Error(error.message);
     return data || [];
   },
 
-  async saveToRegistry(entry: PrinterRegistryEntry) {
+  async addPrinter(payload: Partial<Printer>): Promise<Printer> {
     const client = getSupabase();
-    if (!client) return;
+    if (!client) throw new Error("Supabase client not initialized");
+
     const profile = await authService.getProfile();
+    if (!profile?.company_id) throw new Error("Company ID missing from profile");
+
+    // Strict Validations
+    if (!payload.outlet_id) throw new Error("Outlet ID is required");
+    if (!payload.name) throw new Error("Printer name is required");
+    if (!payload.printer_type) throw new Error("Printer type is required");
+
+    const insertPayload = {
+      ...payload,
+      company_id: profile.company_id,
+      is_active: true,
+      is_default: payload.is_default || false
+    };
+
+    console.log("PRINTER_SERVICE: BEFORE_INSERT_PAYLOAD", insertPayload);
+
     const { data, error } = await client
-      .from('printers_registry')
-      .upsert({ 
-        ...entry, 
-        company_id: profile.company_id 
-      })
+      .from('printers')
+      .insert(insertPayload)
       .select()
       .single();
-    if (error) throw new Error(error.message);
+
+    if (error) {
+      console.error("PRINTER_SERVICE: INSERT_ERROR", error);
+      throw new Error(error.message);
+    }
+
+    console.log("PRINTER_SERVICE: AFTER_DB_RESPONSE", data);
     return data;
   },
 
-  async deleteFromRegistry(id: string) {
+  async setDefaultPrinter(printerId: string, outletId: string) {
     const client = getSupabase();
-    if (!client) return;
-    const { error } = await client
-      .from('printers_registry')
-      .delete()
-      .eq('id', id);
-    if (error) throw new Error(error.message);
+    if (!client) throw new Error("Supabase client not initialized");
+
+    const profile = await authService.getProfile();
+    if (!profile?.company_id) throw new Error("Company ID missing from profile");
+
+    // 1. Clear previous default for this outlet
+    const { error: clearError } = await client
+      .from('printers')
+      .update({ is_default: false })
+      .eq('company_id', profile.company_id)
+      .eq('outlet_id', outletId);
+
+    if (clearError) throw new Error(clearError.message);
+
+    // 2. Set new default
+    const { error: setError } = await client
+      .from('printers')
+      .update({ is_default: true })
+      .eq('id', printerId)
+      .eq('company_id', profile.company_id);
+
+    if (setError) throw new Error(setError.message);
   },
 
-  async getPrintersForRole(outletId: string, role: 'BILL' | 'KOT'): Promise<PrinterRegistryEntry[]> {
-    const registry = await this.fetchRegistry(outletId);
-    return registry.filter(p => p.is_active && p.roles.includes(role));
+  async deletePrinter(id: string) {
+    const client = getSupabase();
+    if (!client) return;
+    
+    const profile = await authService.getProfile();
+    if (!profile?.company_id) throw new Error("Company ID missing from profile");
+
+    const { error } = await client
+      .from('printers')
+      .delete()
+      .eq('id', id)
+      .eq('company_id', profile.company_id);
+
+    if (error) throw new Error(error.message);
   }
 };
