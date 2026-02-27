@@ -398,7 +398,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
                     />
                  </div> */
 
-                 <div className="relative">
+                    <div className="relative">
                       <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <input 
                         type="text"
@@ -422,7 +422,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
                         </button>
                       ))}
                     </div>
-                 </div>
+                 
 
 
                  {/* Ingredients */}
