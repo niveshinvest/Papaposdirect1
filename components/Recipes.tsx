@@ -386,18 +386,9 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
               </div>
 
               <div className="flex-1 overflow-y-auto p-10 space-y-10">
-                 {/* Item Name */}
-                /* <div className="space-y-4">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dish Name</label>
-                    <input 
-                      type="text"
-                      placeholder="Enter dish name (e.g. Butter Chicken)"
-                      className="w-full px-6 py-5 bg-slate-50 border border-slate-100 rounded-[24px] font-bold text-slate-900 outline-none focus:ring-2 focus:ring-slate-900"
-                      value={manualForm.itemName}
-                      onChange={(e) => setManualForm({...manualForm, itemName: e.target.value})}
-                    />
-                 </div> */
-
+                 {/* Item Name Selection */}
+                 <div className="space-y-4">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Target Dish</label>
                     <div className="relative">
                       <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <input 
@@ -412,17 +403,18 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
                       {filteredMenuItems.map(m => (
                         <button 
                           key={m.id}
-                          onClick={() => setSelectedTarget(m)}
+                          onClick={() => {
+                            setSelectedTarget(m);
+                            setManualForm({...manualForm, itemName: m.name});
+                          }}
                           className={`w-full p-4 text-left rounded-2xl font-bold text-sm transition-all flex justify-between items-center ${selectedTarget?.id === m.id ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-100 text-slate-600 hover:border-indigo-200'}`}
                         >
                           {m.name}
                           {selectedTarget?.id === m.id && <CheckCircle size={16} />}
-                          {setManualForm({...manualForm, itemName: m.id})}
-
                         </button>
                       ))}
                     </div>
-                 
+                 </div>
 
 
                  {/* Ingredients */}

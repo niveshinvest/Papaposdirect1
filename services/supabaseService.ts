@@ -55,8 +55,8 @@ export const authService = {
   },
 
   async getProfile() {
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    if (!user) return null;
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    if (authError || !user) return null;
 
     const { data: profile, error } = await supabaseClient
       .from('profiles')
@@ -64,7 +64,11 @@ export const authService = {
       .eq('id', user.id)
       .single();
 
-    if (error) return null;
+    if (error) {
+      if (error.code === 'PGRST116') return null; // Profile not found is acceptable for new users
+      throw error; // Rethrow real errors (network, RLS, etc.)
+    }
+
     return {
       ...profile,
       email: user.email,

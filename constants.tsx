@@ -1,5 +1,4 @@
 
-import React from 'react';
 import { LayoutDashboard, Receipt, Package, BarChart3, BrainCircuit, Users, Settings, FileText, ShoppingCart, Bike, Check, X, MapPin, Repeat, ChefHat, BookOpen, MonitorPlay, MessageSquare, FileSpreadsheet, ShieldCheck, Monitor } from 'lucide-react';
 import { MenuItem, Table, InventoryItem, InventoryCategory, SubscriptionPlan, UserRole, PaymentMethod, Organization, User } from './types';
 

@@ -17,8 +17,9 @@ export default defineConfig(({ mode }) => {
       },
       resolve: {
         alias: {
-          '@': path.resolve(__dirname, '.'),
-        }
+          '@': path.resolve(process.cwd(), '.'),
+        },
+        dedupe: ['react', 'react-dom']
       }
     };
 });

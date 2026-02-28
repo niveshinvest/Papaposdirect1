@@ -1,5 +1,4 @@
 
-import React from 'react';
 import { NAVIGATION_ITEMS, COLORS } from '../constants';
 import { ViewMode, Organization, User } from '../types';
 import { Award, Zap, ShieldCheck, Trash2, RefreshCcw, AlertTriangle } from 'lucide-react';

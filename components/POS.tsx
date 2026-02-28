@@ -17,7 +17,7 @@ import { db } from '../services/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { processVoiceInput, VoiceCommand } from '../services/voiceAssistantService';
 import { GeminiLiveService } from '../services/GeminiLiveService';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // --- Price Integrity Contract ---
 interface ValidatedCartItem {

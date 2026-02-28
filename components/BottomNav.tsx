@@ -1,5 +1,4 @@
 
-import React from 'react';
 import { ViewMode } from '../types';
 import { LayoutDashboard, Receipt, Package, Menu as MenuIcon } from 'lucide-react';
 

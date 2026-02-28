@@ -41,9 +41,9 @@ const StatCard = ({ title, value, sub, icon: Icon, color, loading, isSensitive, 
   );
 };
 
-const Dashboard: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletId }) => {
+const Dashboard: React.FC<{ activeOutletId?: string | null; profile?: any }> = ({ activeOutletId, profile: passedProfile }) => {
   const navigate = useNavigate();
-  const [role, setRole] = useState<UserRole | null>(null);
+  const [role, setRole] = useState<UserRole | null>(passedProfile?.role || null);
   const [metrics, setMetrics] = useState<any>(null);
   const [topItems, setTopItems] = useState<any[]>([]);
   const [terminals, setTerminals] = useState<any[]>([]);
@@ -60,14 +60,20 @@ const Dashboard: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletI
     setLoading(true);
     setError(null);
     try {
-      const profile = await authService.getProfile();
+      let profile = passedProfile;
+      if (!profile) {
+        profile = await authService.getProfile();
+      }
+
       if (!profile) {
         // Check if it's a network issue or truly unauthorized
         const user = await authService.getCurrentUser();
         if (!user) {
           return navigate('/auth');
         } else {
-          throw new Error("Cloud connection lost. Please check your network.");
+          // If we have a user but no profile, it might be a new user or a real network error
+          // But since we improved getProfile to throw real errors, we can just handle it here
+          throw new Error("Profile not found or cloud connection lost. Please check your network.");
         }
       }
       setRole(profile.role);

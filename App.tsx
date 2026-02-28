@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, FC, ReactNode } from 'react';
+import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
 import Dashboard from './components/Dashboard';
@@ -33,7 +33,59 @@ import { syncService } from './services/syncService';
 import { sessionService } from './services/sessionService';
 import { Store, ChevronDown, Loader2, ShieldAlert } from 'lucide-react';
 
-const App: React.FC = () => {
+const Layout: FC<{ 
+  children: ReactNode; 
+  view: ViewMode; 
+  org: Organization | null; 
+  user: any; 
+  activeOutlet: Outlet | null; 
+  outlets: Outlet[]; 
+  onOutletChange: (o: Outlet) => void;
+}> = ({ children, view, org, user, activeOutlet, outlets, onOutletChange }) => {
+  const navigate = useNavigate();
+  return (
+    <div className="flex flex-col md:flex-row min-h-screen">
+      <Sidebar 
+        currentView={view} 
+        onViewChange={(v) => navigate(`/${v.toLowerCase()}`)} 
+        org={org} 
+        user={user} 
+      />
+      <div className="flex-1 md:ml-64 bg-slate-50 min-h-screen flex flex-col">
+        <header className="h-16 border-b bg-white/80 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-[100]">
+           <div className="flex items-center gap-4">
+              <h1 className="font-black text-slate-800 uppercase tracking-tighter text-sm hidden lg:block">{view.replace(/_/g, ' ')}</h1>
+              <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-2xl border border-slate-100 relative min-w-[200px]">
+                 <Store size={14} className="text-orange-50" />
+                 <select 
+                   className="flex-1 bg-transparent border-none text-[11px] font-black text-slate-800 outline-none appearance-none cursor-pointer pr-8 z-10"
+                   value={activeOutlet?.id || ''}
+                   onChange={(e) => {
+                     const selected = outlets?.find(o => o.id === e.target.value);
+                     if (selected) onOutletChange(selected);
+                   }}
+                 >
+                    {(outlets?.length === 0 || !outlets) && <option value="">No Outlets Registered</option>}
+                    {outlets?.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                 </select>
+                 <ChevronDown size={14} className="text-slate-400 absolute right-4 pointer-events-none" />
+              </div>
+           </div>
+        </header>
+
+        <main className="flex-1 pb-20 md:pb-0">
+          {children}
+        </main>
+      </div>
+      <BottomNav 
+        currentView={view} 
+        onViewChange={(v) => navigate(`/${v.toLowerCase()}`)} 
+      />
+    </div>
+  );
+};
+
+const AppContent: FC = () => {
   const [activeOutlet, setActiveOutlet] = useState<Outlet | null>(null);
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [authState, setAuthState] = useState<{ user: any | null; org: Organization | null }>({ user: null, org: null });
@@ -93,47 +145,6 @@ const App: React.FC = () => {
     }
   };
 
-  const wrap = (component: React.ReactNode, view: ViewMode) => (
-    <div className="flex flex-col md:flex-row min-h-screen">
-      <Sidebar 
-        currentView={view} 
-        onViewChange={(v) => navigate(`/${v.toLowerCase()}`)} 
-        org={authState.org} 
-        user={authState.user} 
-      />
-      <div className="flex-1 md:ml-64 bg-slate-50 min-h-screen flex flex-col">
-        <header className="h-16 border-b bg-white/80 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-[100]">
-           <div className="flex items-center gap-4">
-              <h1 className="font-black text-slate-800 uppercase tracking-tighter text-sm hidden lg:block">{view.replace(/_/g, ' ')}</h1>
-              <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-2xl border border-slate-100 relative min-w-[200px]">
-                 <Store size={14} className="text-orange-50" />
-                 <select 
-                   className="flex-1 bg-transparent border-none text-[11px] font-black text-slate-800 outline-none appearance-none cursor-pointer pr-8 z-10"
-                   value={activeOutlet?.id || ''}
-                   onChange={(e) => {
-                     const selected = outlets?.find(o => o.id === e.target.value);
-                     if (selected) handleOutletChange(selected);
-                   }}
-                 >
-                    {(outlets?.length === 0 || !outlets) && <option value="">No Outlets Registered</option>}
-                    {outlets?.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-                 </select>
-                 <ChevronDown size={14} className="text-slate-400 absolute right-4 pointer-events-none" />
-              </div>
-           </div>
-        </header>
-
-        <main className="flex-1 pb-20 md:pb-0">
-          {component}
-        </main>
-      </div>
-      <BottomNav 
-        currentView={view} 
-        onViewChange={(v) => navigate(`/${v.toLowerCase()}`)} 
-      />
-    </div>
-  );
-
   if (loading) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6">
@@ -178,32 +189,39 @@ const App: React.FC = () => {
         
         <Route path="/onboarding/:token" element={<StaffOnboarding />} />
 
-        <Route path="/dashboard" element={authState.user ? wrap(<Dashboard activeOutletId={activeOutlet?.id} />, ViewMode.DASHBOARD) : <Navigate to="/auth" />} />
-        <Route path="/pos" element={authState.user ? wrap(<POS org={authState.org} activeOutlet={activeOutlet} currentUser={authState.user} />, ViewMode.POS) : <Navigate to="/auth" />} />
-        <Route path="/inventory" element={authState.user ? wrap(<Inventory activeOutlet={activeOutlet} />, ViewMode.INVENTORY) : <Navigate to="/auth" />} />
-        <Route path="/recipes" element={authState.user ? wrap(<Recipes activeOutlet={activeOutlet} />, ViewMode.RECIPES) : <Navigate to="/auth" />} />
-        <Route path="/menu_management" element={authState.user ? wrap(<MenuManagement activeOutlet={activeOutlet} />, ViewMode.MENU_MANAGEMENT) : <Navigate to="/auth" />} />
-        <Route path="/outlets" element={authState.user ? wrap(<Outlets />, ViewMode.OUTLETS) : <Navigate to="/auth" />} />
-        <Route path="/user_management" element={authState.user ? wrap(<UserManagement />, ViewMode.USER_MANAGEMENT) : <Navigate to="/auth" />} />
-        <Route path="/terminal_management" element={authState.user ? wrap(<TerminalManagement />, ViewMode.TERMINAL_MANAGEMENT) : <Navigate to="/auth" />} />
-        <Route path="/settings" element={authState.user ? wrap(<Settings org={authState.org} onUpdateOrg={() => {}} activeOutlet={activeOutlet} />, ViewMode.SETTINGS) : <Navigate to="/auth" />} />
-        <Route path="/ai_insights" element={authState.user ? wrap(<AIInsights salesData={[]} menuItems={[]} activeOutletId={activeOutlet?.id} />, ViewMode.AI_INSIGHTS) : <Navigate to="/auth" />} />
-        {/* Fix: Corrected component props for Reports */}
-        <Route path="/reports" element={authState.user ? wrap(<Reports activeOutletId={activeOutlet?.id} />, ViewMode.REPORTS) : <Navigate to="/auth" />} />
-        <Route path="/kitchen_display" element={authState.user ? wrap(<KDS activeOutletId={activeOutlet?.id} />, ViewMode.KITCHEN_DISPLAY) : <Navigate to="/auth" />} />
-        <Route path="/crm" element={authState.user ? wrap(<CRM customers={[]} onSaveCustomer={async () => {}} onDeleteCustomer={async () => {}} />, ViewMode.CRM) : <Navigate to="/auth" />} />
-        <Route path="/whatsapp" element={authState.user ? wrap(<WhatsAppIntegration />, ViewMode.WHATSAPP) : <Navigate to="/auth" />} />
-        <Route path="/gst_reports" element={authState.user ? wrap(<GstReports activeOutlet={activeOutlet} />, ViewMode.GST_REPORTS) : <Navigate to="/auth" />} />
-        <Route path="/transfers" element={authState.user ? wrap(<StockTransfers activeOutlet={activeOutlet} org={authState.org} />, ViewMode.TRANSFERS) : <Navigate to="/auth" />} />
-        <Route path="/purchase_orders" element={authState.user ? wrap(<PurchaseOrders activeOutlet={activeOutlet} />, ViewMode.PURCHASE_ORDERS) : <Navigate to="/auth" />} />
-        <Route path="/delivery_partners" element={authState.user ? wrap(<DeliveryIntegrations />, ViewMode.DELIVERY_PARTNERS) : <Navigate to="/auth" />} />
-        <Route path="/profile" element={authState.user ? wrap(<Profile user={authState.user} org={authState.org} onSignOut={() => { setAuthState({user: null, org: null}); navigate('/'); }} />, ViewMode.PROFILE) : <Navigate to="/auth" />} />
-        <Route path="/recycle_bin" element={authState.user ? wrap(<RecycleBin items={[]} onRestore={async () => {}} onPermanentDelete={async () => {}} />, ViewMode.RECYCLE_BIN) : <Navigate to="/auth" />} />
-        <Route path="/mobile_menu" element={authState.user ? wrap(<MoreMenu user={authState.user} org={authState.org} onSignOut={() => navigate('/')} onViewChange={(v) => navigate(`/${v.toLowerCase()}`)} currentView={ViewMode.MOBILE_MENU} />, ViewMode.MOBILE_MENU) : <Navigate to="/auth" />} />
+        <Route path="/dashboard" element={authState.user ? <Layout view={ViewMode.DASHBOARD} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Dashboard activeOutletId={activeOutlet?.id} profile={authState.user} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/pos" element={authState.user ? <Layout view={ViewMode.POS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><POS org={authState.org} activeOutlet={activeOutlet} currentUser={authState.user} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/inventory" element={authState.user ? <Layout view={ViewMode.INVENTORY} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Inventory activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/recipes" element={authState.user ? <Layout view={ViewMode.RECIPES} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Recipes activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/menu_management" element={authState.user ? <Layout view={ViewMode.MENU_MANAGEMENT} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><MenuManagement activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/outlets" element={authState.user ? <Layout view={ViewMode.OUTLETS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Outlets /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/user_management" element={authState.user ? <Layout view={ViewMode.USER_MANAGEMENT} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><UserManagement /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/terminal_management" element={authState.user ? <Layout view={ViewMode.TERMINAL_MANAGEMENT} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><TerminalManagement /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/settings" element={authState.user ? <Layout view={ViewMode.SETTINGS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Settings org={authState.org} onUpdateOrg={() => {}} activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/ai_insights" element={authState.user ? <Layout view={ViewMode.AI_INSIGHTS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><AIInsights salesData={[]} menuItems={[]} activeOutletId={activeOutlet?.id} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/reports" element={authState.user ? <Layout view={ViewMode.REPORTS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Reports activeOutletId={activeOutlet?.id} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/kitchen_display" element={authState.user ? <Layout view={ViewMode.KITCHEN_DISPLAY} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><KDS activeOutletId={activeOutlet?.id} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/crm" element={authState.user ? <Layout view={ViewMode.CRM} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><CRM customers={[]} onSaveCustomer={async () => {}} onDeleteCustomer={async () => {}} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/whatsapp" element={authState.user ? <Layout view={ViewMode.WHATSAPP} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><WhatsAppIntegration /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/gst_reports" element={authState.user ? <Layout view={ViewMode.GST_REPORTS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><GstReports activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/transfers" element={authState.user ? <Layout view={ViewMode.TRANSFERS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><StockTransfers activeOutlet={activeOutlet} org={authState.org} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/purchase_orders" element={authState.user ? <Layout view={ViewMode.PURCHASE_ORDERS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><PurchaseOrders activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/delivery_partners" element={authState.user ? <Layout view={ViewMode.DELIVERY_PARTNERS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><DeliveryIntegrations /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/profile" element={authState.user ? <Layout view={ViewMode.PROFILE} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Profile user={authState.user} org={authState.org} onSignOut={() => { setAuthState({user: null, org: null}); navigate('/'); }} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/recycle_bin" element={authState.user ? <Layout view={ViewMode.RECYCLE_BIN} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><RecycleBin items={[]} onRestore={async () => {}} onPermanentDelete={async () => {}} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/mobile_menu" element={authState.user ? <Layout view={ViewMode.MOBILE_MENU} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><MoreMenu user={authState.user} org={authState.org} onSignOut={() => navigate('/')} onViewChange={(v) => navigate(`/${v.toLowerCase()}`)} currentView={ViewMode.MOBILE_MENU} /></Layout> : <Navigate to="/auth" />} />
 
         <Route path="*" element={<Navigate to={authState.user ? "/dashboard" : "/"} />} />
       </Routes>
     </SessionGuard>
+  );
+};
+
+const App: FC = () => {
+  return (
+    <HashRouter>
+      <AppContent />
+    </HashRouter>
   );
 };
 
