@@ -6,7 +6,7 @@ import {
   PlusCircle, Loader2, Sparkles, Wand2, ShieldAlert, BadgeCheck, Save,
   Clock, Lock, CheckSquare, Edit3, Plus, Minus
 } from 'lucide-react';
-import { menuService } from '../services/supabaseService';
+import { menuService, getSupabase } from '../services/supabaseService';
 import { recipeService, RecipeEntry, RecipeStatus } from '../services/recipeService';
 import { Outlet, MenuItem } from '../types';
 
@@ -28,6 +28,9 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
   const [isManualRecipeOpen, setIsManualRecipeOpen] = useState(false);
   const [selectedTarget, setSelectedTarget] = useState<MenuItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  // FIX START
+  const [inventoryItems, setInventoryItems] = useState<string[]>([]);
+  // FIX END
 
   // Manual Form State
   const [manualForm, setManualForm] = useState({
@@ -49,12 +52,16 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
     setIsLoading(true);
     try {
       console.log("RECIPES_UI: FETCHING_DATA", { outletId: activeOutlet.id });
-      const [recipes, items] = await Promise.all([
+      // FIX START
+      const [recipes, items, invData] = await Promise.all([
         recipeService.fetchRecipes(activeOutlet.id),
-        menuService.fetchItems()
+        menuService.fetchItems(),
+        getSupabase().from('inventory').select('name').eq('outlet_id', activeOutlet.id)
       ]);
       setGroupedRecipes(recipes);
       setMenuItems(items || []);
+      setInventoryItems(Array.from(new Set(invData.data?.map(i => i.name) || [])));
+      // FIX END
       console.log("RECIPES_UI: DATA_LOADED", { recipes, itemsCount: items?.length });
     } catch (error) {
       console.error("RECIPES_UI: LOAD_ERROR", error);
@@ -434,9 +441,8 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
                     <div className="space-y-3">
                       {manualForm.ingredients.map((ing, idx) => (
                         <div key={idx} className="flex gap-3 items-center animate-in slide-in-from-left-2">
-                          <input 
-                            type="text"
-                            placeholder="Ingredient"
+                          {/* FIX START */}
+                          <select 
                             className="flex-[2] px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-slate-900"
                             value={ing.name}
                             onChange={(e) => {
@@ -444,7 +450,13 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
                               newIngs[idx].name = e.target.value;
                               setManualForm({...manualForm, ingredients: newIngs});
                             }}
-                          />
+                          >
+                            <option value="">Select Ingredient</option>
+                            {inventoryItems.map(name => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
+                          {/* FIX END */}
                           <input 
                             type="number"
                             placeholder="Qty"
