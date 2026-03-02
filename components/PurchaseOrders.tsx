@@ -66,11 +66,30 @@ const PurchaseOrders: React.FC<PurchaseOrdersProps> = ({ activeOutlet }) => {
       await loadData();
       setSelectedOcr(null);
       setView('LIST');
-    } catch (err) {
-      alert("Failed to commit procurement data.");
+    } catch (err: any) {
+      console.error(err);
+      alert(`Failed to commit procurement data: ${err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDeleteItem = (index: number) => {
+    if (!selectedOcr) return;
+    const newItems = [...selectedOcr.extracted_data.items];
+    newItems.splice(index, 1);
+    
+    // Recalculate total
+    const newTotal = newItems.reduce((acc: number, item: any) => acc + (Number(item.qty) * Number(item.price)), 0);
+    
+    setSelectedOcr({
+      ...selectedOcr,
+      extracted_data: {
+        ...selectedOcr.extracted_data,
+        items: newItems,
+        total_amount: newTotal
+      }
+    });
   };
 
   if (loading && orders.length === 0) {
@@ -244,25 +263,61 @@ const PurchaseOrders: React.FC<PurchaseOrdersProps> = ({ activeOutlet }) => {
                     </div>
                  </div>
 
-                 <div className="space-y-4">
+                  <div className="space-y-4">
                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Extracted Line Items</h4>
                     <div className="space-y-3">
                        {selectedOcr?.extracted_data.items.map((item: any, idx: number) => (
                          <div key={idx} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 group">
                             <div className="flex-1 min-w-0">
-                               <p className="font-bold text-slate-800 truncate">{item.name}</p>
+                               <input 
+                                 className="w-full bg-transparent border-none font-bold text-slate-800 focus:ring-0 p-0"
+                                 value={item.name}
+                                 onChange={e => {
+                                   const newItems = [...selectedOcr.extracted_data.items];
+                                   newItems[idx].name = e.target.value;
+                                   setSelectedOcr({...selectedOcr, extracted_data: {...selectedOcr.extracted_data, items: newItems}});
+                                 }}
+                               />
                                <p className="text-[9px] font-black text-slate-400 uppercase">HSN: {item.hsn || 'N/A'}</p>
                             </div>
                             <div className="flex items-center gap-6">
-                               <div className="text-right">
-                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Qty</p>
-                                  <p className="font-black text-slate-900">{item.qty} {item.unit}</p>
+                               <div className="text-right w-20">
+                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Qty</p>
+                                  <input 
+                                    type="number"
+                                    className="w-full bg-transparent border-none font-black text-slate-900 text-right focus:ring-0 p-0"
+                                    value={item.qty}
+                                    onChange={e => {
+                                      const newItems = [...selectedOcr.extracted_data.items];
+                                      newItems[idx].qty = Number(e.target.value);
+                                      const newTotal = newItems.reduce((acc: number, it: any) => acc + (Number(it.qty) * Number(it.price)), 0);
+                                      setSelectedOcr({...selectedOcr, extracted_data: {...selectedOcr.extracted_data, items: newItems, total_amount: newTotal}});
+                                    }}
+                                  />
                                </div>
-                               <div className="text-right">
-                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Rate</p>
-                                  <p className="font-black text-indigo-600">₹{item.price}</p>
+                               <div className="text-right w-24">
+                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Rate</p>
+                                  <div className="flex items-center justify-end">
+                                    <span className="text-indigo-600 font-black mr-1">₹</span>
+                                    <input 
+                                      type="number"
+                                      className="w-full bg-transparent border-none font-black text-indigo-600 text-right focus:ring-0 p-0"
+                                      value={item.price}
+                                      onChange={e => {
+                                        const newItems = [...selectedOcr.extracted_data.items];
+                                        newItems[idx].price = Number(e.target.value);
+                                        const newTotal = newItems.reduce((acc: number, it: any) => acc + (Number(it.qty) * Number(it.price)), 0);
+                                        setSelectedOcr({...selectedOcr, extracted_data: {...selectedOcr.extracted_data, items: newItems, total_amount: newTotal}});
+                                      }}
+                                    />
+                                  </div>
                                </div>
-                               <button className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><X size={16} /></button>
+                               <button 
+                                 onClick={() => handleDeleteItem(idx)}
+                                 className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
+                               >
+                                 <X size={16} />
+                               </button>
                             </div>
                          </div>
                        ))}

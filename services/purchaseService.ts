@@ -1,5 +1,5 @@
 
-import { getSupabase, authService } from './supabaseService';
+import { getSupabase, authService, tenantContext } from './supabaseService';
 
 export const purchaseService = {
   async fetchSuppliers() {
@@ -54,67 +54,72 @@ export const purchaseService = {
 
   async commitOcrResult(ocrId: string, finalData: any, outletId: string) {
     const client = getSupabase();
-    if (!client) return;
-    const profile = await authService.getProfile();
+    if (!client) throw new Error("Database connection required");
+    
+    const { company_id } = await tenantContext.require();
+
+    if (!finalData || !finalData.items) {
+      throw new Error("Invalid OCR data: items missing");
+    }
 
     // 1. Create or Get Supplier
     const { data: supplier, error: suppErr } = await client
       .from('suppliers')
       .upsert({ 
-        company_id: profile.company_id, 
-        name: finalData.vendor_name,
+        company_id, 
+        name: finalData.vendor_name || 'Unknown Vendor',
         gstin: finalData.vendor_gstin 
       }, { onConflict: 'company_id, name' })
       .select()
       .single();
     
-    if (suppErr) throw new Error(suppErr.message);
+    if (suppErr) throw new Error(`Supplier Error: ${suppErr.message}`);
 
     // 2. Create Procurement Order
     const { data: po, error: poErr } = await client
       .from('procurement_orders')
       .insert({
-        company_id: profile.company_id,
+        company_id,
         outlet_id: outletId,
         supplier_id: supplier?.id,
-        order_date: finalData.invoice_date,
-        total_amount: finalData.total_amount,
+        order_date: finalData.invoice_date || new Date().toISOString().split('T')[0],
+        total_amount: finalData.total_amount || 0,
         status: 'RECEIVED'
       })
       .select()
       .single();
     
-    if (poErr) throw new Error(poErr.message);
+    if (poErr) throw new Error(`Order Error: ${poErr.message}`);
 
     // 3. Create Items
     const items = finalData.items.map((item: any) => ({
       purchase_order_id: po.id,
-      company_id: profile.company_id,
+      company_id,
       outlet_id: outletId,
-      item_name: item.name,
-      qty: item.qty,
+      item_name: item.name || 'Unnamed Item',
+      qty: Number(item.qty) || 0,
       unit: item.unit || 'unit',
-      unit_price: item.price,
-      total_amount: item.qty * item.price
+      unit_price: Number(item.price) || 0,
+      total_amount: (Number(item.qty) || 0) * (Number(item.price) || 0)
     }));
 
     const { error: itemsErr } = await client.from('purchase_items').insert(items);
-    if (itemsErr) throw new Error(itemsErr.message);
+    if (itemsErr) throw new Error(`Items Error: ${itemsErr.message}`);
 
     // 4. Create Invoice Record
     const { error: invErr } = await client.from('purchase_invoices').insert({
-      company_id: profile.company_id,
+      company_id,
       purchase_order_id: po.id,
       invoice_number: finalData.invoice_number || 'AI-EXTRACTED',
-      invoice_date: finalData.invoice_date,
+      invoice_date: finalData.invoice_date || new Date().toISOString().split('T')[0],
       supplier_gstin: finalData.vendor_gstin,
-      total_amount: finalData.total_amount,
+      total_amount: finalData.total_amount || 0,
       status: 'UNPAID'
     });
-    if (invErr) throw new Error(invErr.message);
+    if (invErr) throw new Error(`Invoice Error: ${invErr.message}`);
 
     // 5. Mark OCR as Processed
     const { error: ocrErr } = await client.from('ocr_invoice_results').update({ status: 'PROCESSED' }).eq('id', ocrId);
-    if (ocrErr) throw new Error(ocrErr.message);
+    if (ocrErr) throw new Error(`OCR Status Error: ${ocrErr.message}`);
   }
 };
