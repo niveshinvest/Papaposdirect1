@@ -58,6 +58,23 @@ const PurchaseOrders: React.FC<PurchaseOrdersProps> = ({ activeOutlet }) => {
     }
   };
 
+  // FIX START
+  const handleManualEntry = () => {
+    setSelectedOcr({
+      id: null,
+      extracted_data: {
+        vendor_name: '',
+        invoice_date: new Date().toISOString().split('T')[0],
+        vendor_gstin: '',
+        invoice_number: '',
+        total_amount: 0,
+        items: []
+      }
+    });
+    setView('REVIEW');
+  };
+  // FIX END
+
   const handleCommitOcr = async () => {
     if (!selectedOcr || !activeOutlet) return;
     setLoading(true);
@@ -120,9 +137,14 @@ const PurchaseOrders: React.FC<PurchaseOrdersProps> = ({ activeOutlet }) => {
              {isProcessing ? <Loader2 className="animate-spin" size={20} /> : <Camera size={20} />} 
              Scan Invoice (AI)
            </button>
-           <button className="flex items-center gap-2 bg-[#FF6B00] text-white px-8 py-3 rounded-xl font-black shadow-xl hover:scale-105 transition-all">
+           {/* FIX START */}
+           <button 
+             onClick={handleManualEntry}
+             className="flex items-center gap-2 bg-[#FF6B00] text-white px-8 py-3 rounded-xl font-black shadow-xl hover:scale-105 transition-all"
+           >
              <Plus size={20} /> Manual Entry
            </button>
+           {/* FIX END */}
         </div>
       </div>
 
@@ -263,9 +285,22 @@ const PurchaseOrders: React.FC<PurchaseOrdersProps> = ({ activeOutlet }) => {
                     </div>
                  </div>
 
+                  {/* FIX START */}
                   <div className="space-y-4">
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Extracted Line Items</h4>
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Extracted Line Items</h4>
+                      <button 
+                        onClick={() => {
+                          const newItems = [...selectedOcr.extracted_data.items, { name: '', qty: 1, unit: 'unit', price: 0 }];
+                          setSelectedOcr({...selectedOcr, extracted_data: {...selectedOcr.extracted_data, items: newItems}});
+                        }}
+                        className="text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-1"
+                      >
+                        <Plus size={12} /> Add Item
+                      </button>
+                    </div>
                     <div className="space-y-3">
+                  {/* FIX END */}
                        {selectedOcr?.extracted_data.items.map((item: any, idx: number) => (
                          <div key={idx} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 group">
                             <div className="flex-1 min-w-0">
