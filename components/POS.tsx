@@ -10,8 +10,9 @@ import {
 } from 'lucide-react';
 import { salesService } from '../services/salesService';
 import { kitchenService } from '../services/kitchenService';
+import { recipeService } from '../services/recipeService';
 import { sessionService } from '../services/sessionService';
-import { paymentService } from '../services/supabaseService';
+import { paymentService, inventoryService } from '../services/supabaseService';
 import { printerService } from '../services/printerService';
 import { db } from '../services/db';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -547,6 +548,11 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
       await db.invoice_items.bulkPut(invoiceItemRows);
 
+      // FIX START: INV-C-01 Automated Recipe Depletion
+      // Trigger background depletion to avoid blocking UI
+      depleteInventoryForOrder(totals.processedItems, activeOutlet.id);
+      // FIX END
+
       setLastInvoice({ ...invoice, items: totals.processedItems });
       setShowPrintPreview(true);
       
@@ -578,6 +584,23 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
       alert(`Finalization failed: ${e.message}`);
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const depleteInventoryForOrder = async (items: any[], outletId: string) => {
+    try {
+      for (const item of items) {
+        const recipe = await recipeService.getFinalizedRecipeByItemName(item.name, outletId);
+        if (recipe && recipe.recipe_json?.ingredients) {
+          for (const ing of recipe.recipe_json.ingredients) {
+            // Deduct from inventory: quantity * recipe_quantity
+            const totalDeduction = item.quantity * ing.quantity;
+            await inventoryService.deductStock(ing.name, outletId, totalDeduction, `SALE: ${item.name}`);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[INVENTORY_DEPLETION] Failed to deplete stock:", e);
     }
   };
 

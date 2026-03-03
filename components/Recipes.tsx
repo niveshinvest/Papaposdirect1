@@ -6,7 +6,7 @@ import {
   PlusCircle, Loader2, Sparkles, Wand2, ShieldAlert, BadgeCheck, Save,
   Clock, Lock, CheckSquare, Edit3, Plus, Minus
 } from 'lucide-react';
-import { menuService, getSupabase } from '../services/supabaseService';
+import { menuService, getSupabase, inventoryService } from '../services/supabaseService';
 import { recipeService, RecipeEntry, RecipeStatus } from '../services/recipeService';
 import { Outlet, MenuItem } from '../types';
 
@@ -29,13 +29,13 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
   const [selectedTarget, setSelectedTarget] = useState<MenuItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   // FIX START
-  const [inventoryItems, setInventoryItems] = useState<string[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<{id: string, name: string}[]>([]);
   // FIX END
 
   // Manual Form State
   const [manualForm, setManualForm] = useState({
     itemName: '',
-    ingredients: [{ name: '', quantity: 0, unit: 'gram', cost: 0 }],
+    ingredients: [{ inventoryItemId: '', name: '', quantity: 0, unit: 'gram', cost: 0 }],
     steps: [''],
     yield: 1,
     notes: ''
@@ -56,11 +56,11 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
       const [recipes, items, invData] = await Promise.all([
         recipeService.fetchRecipes(activeOutlet.id),
         menuService.fetchItems(),
-        getSupabase().from('inventory').select('name').eq('outlet_id', activeOutlet.id)
+        getSupabase().from('inventory').select('id, name').eq('outlet_id', activeOutlet.id)
       ]);
       setGroupedRecipes(recipes);
       setMenuItems(items || []);
-      setInventoryItems(Array.from(new Set(invData.data?.map(i => i.name) || [])));
+      setInventoryItems(invData.data || []);
       // FIX END
       console.log("RECIPES_UI: DATA_LOADED", { recipes, itemsCount: items?.length });
     } catch (error) {
@@ -102,7 +102,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
       setIsManualRecipeOpen(false);
       setManualForm({
         itemName: '',
-        ingredients: [{ name: '', quantity: 0, unit: 'gram', cost: 0 }],
+        ingredients: [{ inventoryItemId: '', name: '', quantity: 0, unit: 'gram', cost: 0 }],
         steps: [''],
         yield: 1,
         notes: ''
@@ -431,7 +431,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
                       <button 
                         onClick={() => setManualForm({
                           ...manualForm, 
-                          ingredients: [...manualForm.ingredients, { name: '', quantity: 0, unit: 'gram', cost: 0 }]
+                          ingredients: [...manualForm.ingredients, { inventoryItemId: '', name: '', quantity: 0, unit: 'gram', cost: 0 }]
                         })}
                         className="flex items-center gap-2 text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:text-indigo-700"
                       >
@@ -444,16 +444,32 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
                           {/* FIX START */}
                           <select 
                             className="flex-[2] px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-slate-900"
-                            value={ing.name}
-                            onChange={(e) => {
+                            value={ing.inventoryItemId || ing.name}
+                            onChange={async (e) => {
+                              const selectedId = e.target.value;
+                              const selectedItem = inventoryItems.find(i => i.id === selectedId);
+                              if (!selectedItem) return;
+
                               const newIngs = [...manualForm.ingredients];
-                              newIngs[idx].name = e.target.value;
+                              newIngs[idx].inventoryItemId = selectedId;
+                              newIngs[idx].name = selectedItem.name;
+                              
+                              // FETCH DYNAMIC COST (WAC) - INV-C-03
+                              if (activeOutlet) {
+                                try {
+                                  const wac = await inventoryService.getWeightedAverageCost(selectedId, activeOutlet.id);
+                                  newIngs[idx].cost = wac;
+                                } catch (err) {
+                                  console.error("WAC Fetch Failed:", err);
+                                }
+                              }
+                              
                               setManualForm({...manualForm, ingredients: newIngs});
                             }}
                           >
                             <option value="">Select Ingredient</option>
-                            {inventoryItems.map(name => (
-                              <option key={name} value={name}>{name}</option>
+                            {inventoryItems.map(item => (
+                              <option key={item.id} value={item.id}>{item.name}</option>
                             ))}
                           </select>
                           {/* FIX END */}
@@ -580,7 +596,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
               <div className="p-10 border-t bg-slate-50 flex justify-between items-center shrink-0">
                  <div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Calculated Cost</p>
-                    <h4 className="text-2xl font-black text-slate-900">₹{manualForm.ingredients.reduce((s, i) => s + (i.cost || 0), 0).toFixed(0)}</h4>
+                    <h4 className="text-2xl font-black text-slate-900">₹{manualForm.ingredients.reduce((s, i) => s + ((i.cost || 0) * (i.quantity || 0)), 0).toFixed(0)}</h4>
                  </div>
                  <div className="flex gap-4">
                     <button onClick={() => setIsManualRecipeOpen(false)} className="px-8 py-4 bg-white border border-slate-200 text-slate-400 rounded-2xl font-black uppercase tracking-widest text-[10px]">Cancel</button>

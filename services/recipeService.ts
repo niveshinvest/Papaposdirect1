@@ -279,6 +279,26 @@ export const recipeService = {
     return grouped;
   },
 
+  async getFinalizedRecipeByItemName(itemName: string, outletId: string): Promise<RecipeEntry | null> {
+    const client = getSupabase();
+    if (!client) throw new Error("Supabase client not initialized");
+
+    const profile = await authService.getProfile();
+    if (!profile?.company_id) throw new Error("Company ID missing from profile");
+
+    const { data, error } = await client
+      .from('recipes')
+      .select('*')
+      .eq('company_id', profile.company_id)
+      .eq('outlet_id', outletId)
+      .eq('item_name', itemName)
+      .eq('status', 'FINALIZED')
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
   async rejectRecipe(recipeId: string): Promise<void> {
     const client = getSupabase();
     if (!client) throw new Error("Supabase client not initialized");

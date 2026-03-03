@@ -258,7 +258,8 @@ export const inventoryService = {
       throw new Error('Safety Block: outlet_id missing');
     }
 
-    const { error } = await supabaseClient
+    // 1. Insert into Ledger
+    const { error: ledgerError } = await supabaseClient
       .from('inventory_ledger')
       .insert({
         ...payload,
@@ -267,7 +268,24 @@ export const inventoryService = {
         created_at: new Date().toISOString()
       });
 
-    if (error) throw new Error(error.message);
+    if (ledgerError) throw new Error(ledgerError.message);
+
+    // 2. If batch_id is present, update the batch quantity
+    if (payload.batch_id && payload.qty_change !== undefined) {
+      const { data: batch, error: fetchError } = await supabaseClient
+        .from('inventory_batches')
+        .select('current_qty')
+        .eq('id', payload.batch_id)
+        .single();
+      
+      if (!fetchError && batch) {
+        const newQty = Number(batch.current_qty) + Number(payload.qty_change);
+        await supabaseClient
+          .from('inventory_batches')
+          .update({ current_qty: newQty, updated_at: new Date().toISOString() })
+          .eq('id', payload.batch_id);
+      }
+    }
   },
 
   async recordStockIn(payload: any) {
@@ -278,6 +296,97 @@ export const inventoryService = {
   async recordWastage(payload: any) {
     const { qty, ...rest } = payload;
     return this.record({ ...rest, qty_change: -qty, transaction_type: 'WASTAGE' });
+  },
+
+  async recordAdjustment(payload: any) {
+    const { qty, ...rest } = payload;
+    return this.record({ ...rest, qty_change: qty, transaction_type: 'ADJUSTMENT' });
+  },
+
+  async deductStock(itemId: string, outletId: string, qtyToDeduct: number, reason: string = 'SALE') {
+    const { company_id, user_id } = await tenantContext.require();
+    
+    // 1. Fetch active batches for this item, ordered by FIFO (created_at)
+    const { data: batches, error: fetchError } = await supabaseClient
+      .from('inventory_batches')
+      .select('*')
+      .eq('company_id', company_id)
+      .eq('outlet_id', outletId)
+      .eq('item_id', itemId)
+      .gt('current_qty', 0)
+      .order('created_at', { ascending: true });
+
+    if (fetchError) throw new Error(fetchError.message);
+    if (!batches || batches.length === 0) {
+      console.warn(`[INVENTORY] No stock available for ${itemId} in ${outletId}`);
+      return;
+    }
+
+    let remainingToDeduct = qtyToDeduct;
+
+    for (const batch of batches) {
+      if (remainingToDeduct <= 0) break;
+
+      const deduction = Math.min(batch.current_qty, remainingToDeduct);
+      const newQty = batch.current_qty - deduction;
+
+      // Update Batch
+      const { error: updateError } = await supabaseClient
+        .from('inventory_batches')
+        .update({ current_qty: newQty, updated_at: new Date().toISOString() })
+        .eq('id', batch.id);
+
+      if (updateError) throw new Error(updateError.message);
+
+      // Record in Ledger
+      await this.record({
+        outlet_id: outletId,
+        item_id: itemId,
+        batch_id: batch.id,
+        transaction_type: reason === 'SALE' ? 'SALE' : 'STOCK_OUT',
+        qty_change: -deduction,
+        balance_after: (await this.getTotalStock(itemId, outletId)), // Helper needed
+        reason: reason
+      });
+
+      remainingToDeduct -= deduction;
+    }
+
+    if (remainingToDeduct > 0) {
+       console.warn(`[INVENTORY] Stock-out for ${itemId}: ${remainingToDeduct} units could not be deducted (Insufficient Stock).`);
+    }
+  },
+
+  async getTotalStock(itemId: string, outletId: string): Promise<number> {
+    const { company_id } = await tenantContext.require();
+    const { data, error } = await supabaseClient
+      .from('inventory_batches')
+      .select('current_qty')
+      .eq('company_id', company_id)
+      .eq('outlet_id', outletId)
+      .eq('item_id', itemId);
+    
+    if (error) throw error;
+    return (data || []).reduce((sum, b) => sum + Number(b.current_qty), 0);
+  },
+
+  async getWeightedAverageCost(itemId: string, outletId: string): Promise<number> {
+    const { company_id } = await tenantContext.require();
+    const { data, error } = await supabaseClient
+      .from('inventory_batches')
+      .select('current_qty, cost_price')
+      .eq('company_id', company_id)
+      .eq('outlet_id', outletId)
+      .eq('item_id', itemId)
+      .gt('current_qty', 0);
+    
+    if (error) throw error;
+    if (!data || data.length === 0) return 0;
+
+    const totalQty = data.reduce((sum, b) => sum + Number(b.current_qty), 0);
+    const totalValue = data.reduce((sum, b) => sum + (Number(b.current_qty) * Number(b.cost_price || 0)), 0);
+
+    return totalQty > 0 ? totalValue / totalQty : 0;
   }
 };
 

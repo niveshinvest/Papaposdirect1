@@ -106,6 +106,64 @@ export const purchaseService = {
     const { error: itemsErr } = await client.from('purchase_items').insert(items);
     if (itemsErr) throw new Error(`Items Error: ${itemsErr.message}`);
 
+    // FIX START
+    for (const item of items) {
+      let { data: invItem } = await client
+        .from('inventory')
+        .select('id')
+        .eq('company_id', company_id)
+        .eq('outlet_id', outletId)
+        .ilike('name', item.item_name)
+        .maybeSingle();
+
+      if (!invItem) {
+        const { data: newInv } = await client
+          .from('inventory')
+          .insert({
+            id: `INV-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+            company_id,
+            outlet_id: outletId,
+            name: item.item_name,
+            unit: item.unit
+          })
+          .select('id')
+          .single();
+        invItem = newInv;
+      }
+
+      if (invItem) {
+        const { data: batch } = await client
+          .from('inventory_batches')
+          .insert({
+            company_id,
+            outlet_id: outletId,
+            item_id: invItem.id,
+            batch_code: finalData.invoice_number || 'PURCHASE',
+            initial_qty: item.qty,
+            current_qty: item.qty,
+            cost_price: item.unit_price,
+            created_at: new Date().toISOString()
+          })
+          .select('id')
+          .single();
+
+        if (batch) {
+          await client.from('inventory_ledger').insert({
+            company_id,
+            outlet_id: outletId,
+            item_id: invItem.id,
+            batch_id: batch.id,
+            transaction_type: 'STOCK_IN',
+            qty_change: item.qty,
+            balance_after: item.qty,
+            reason: `Purchase: ${finalData.invoice_number || 'N/A'}`,
+            created_at: new Date().toISOString()
+          });
+        }
+      }
+    }
+    // FIX END
+
     // 4. Create Invoice Record
     const { error: invErr } = await client.from('purchase_invoices').insert({
       company_id,
