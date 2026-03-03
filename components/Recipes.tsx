@@ -34,7 +34,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
 
   // Manual Form State
   const [manualForm, setManualForm] = useState({
-    itemName: '',
+    menuitemid:'',
     ingredients: [{ inventoryItemId: '', name: '', quantity: 0, unit: 'gram', cost: 0 }],
     steps: [''],
     yield: 1,
@@ -101,7 +101,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
       await loadData();
       setIsManualRecipeOpen(false);
       setManualForm({
-        itemName: '',
+        menuitemid:'',
         ingredients: [{ inventoryItemId: '', name: '', quantity: 0, unit: 'gram', cost: 0 }],
         steps: [''],
         yield: 1,
@@ -412,7 +412,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
                           key={m.id}
                           onClick={() => {
                             setSelectedTarget(m);
-                            setManualForm({...manualForm, itemName: m.name});
+                            setManualForm({...manualForm, menuitemid: m.id});
                           }}
                           className={`w-full p-4 text-left rounded-2xl font-bold text-sm transition-all flex justify-between items-center ${selectedTarget?.id === m.id ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-100 text-slate-600 hover:border-indigo-200'}`}
                         >
