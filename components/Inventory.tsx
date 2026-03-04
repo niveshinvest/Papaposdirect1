@@ -454,7 +454,7 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Batch/Lot ID</label>
                        <input 
                         className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900 outline-none" 
-                        placeholder="LOT-2024"
+                        placeholder="LOT-2026"
                         value={stockInData.batch_code} 
                         onChange={e => setStockInData({...stockInData, batch_code: e.target.value})} 
                        />

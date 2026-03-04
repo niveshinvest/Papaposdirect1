@@ -135,31 +135,54 @@ export const recipeService = {
    * - RETURN saved record
    */
   async createManualRecipe(payload: {
-    itemName: string;
+    menuitemid?: string;
+    itemName?: string;
     outletId: string;
-    ingredients: Array<{ name: string; quantity: number; unit: string; cost: number }>;
+    ingredients: Array<{ name: string; quantity: number; unit: string; cost: number; inventoryItemId?: string }>;
     steps: string[];
     yield: number;
     notes?: string;
   }): Promise<RecipeEntry> {
-    console.log(`RECIPE_SERVICE: START_MANUAL_CREATION for ${payload.itemName}`);
-
     const client = getSupabase();
     if (!client) throw new Error("Supabase client not initialized");
 
     const profile = await authService.getProfile();
     if (!profile?.company_id) throw new Error("Company ID missing from profile");
 
-    // Basic validation
-    if (!payload.itemName) throw new Error("Item name is mandatory");
-    if (!payload.ingredients || payload.ingredients.length === 0) throw new Error("At least one ingredient is required");
+    // FIX START
+    let resolvedItemName = payload.itemName || 'Unnamed Recipe';
+    
+    if (payload.menuitemid) {
+      const { data: menuItem } = await client
+        .from('menu_items')
+        .select('name')
+        .eq('id', payload.menuitemid)
+        .single();
+      if (menuItem) resolvedItemName = menuItem.name;
+    }
 
-    const totalCost = payload.ingredients.reduce((sum, ing) => sum + (ing.cost || 0), 0);
+    // Resolve ingredients by name to inventory IDs if missing
+    const resolvedIngredients = await Promise.all(payload.ingredients.map(async (ing) => {
+      if (ing.inventoryItemId) return ing;
+      
+      const { data: invItem } = await client
+        .from('inventory')
+        .select('id')
+        .eq('company_id', profile.company_id)
+        .eq('outlet_id', payload.outletId)
+        .ilike('name', ing.name)
+        .maybeSingle();
+        
+      return {
+        ...ing,
+        inventoryItemId: invItem?.id || null
+      };
+    }));
 
     const recipeJson = {
-      ingredients: payload.ingredients,
+      ingredients: resolvedIngredients,
       steps: payload.steps,
-      total_cost: totalCost,
+      total_cost: resolvedIngredients.reduce((sum, ing) => sum + (ing.cost || 0), 0),
       yield: payload.yield,
       notes: payload.notes
     };
@@ -167,27 +190,25 @@ export const recipeService = {
     const insertPayload = {
       company_id: profile.company_id,
       outlet_id: payload.outletId,
-      item_name: payload.itemName,
+      item_name: resolvedItemName,
       recipe_json: recipeJson,
       source: 'MANUAL',
       status: 'DRAFT',
       created_by: (await client.auth.getUser()).data.user?.id
     };
 
-    console.log("RECIPE_SERVICE: BEFORE_DB_INSERT_MANUAL", insertPayload);
-
     const { data, error } = await client
       .from('recipes')
       .insert(insertPayload)
       .select()
       .single();
+    // FIX END
 
     if (error) {
       console.error("RECIPE_SERVICE: DB_INSERT_MANUAL_ERROR", error);
       throw new Error(error.message);
     }
 
-    console.log("RECIPE_SERVICE: AFTER_DB_INSERT_MANUAL", data);
     return data;
   },
 

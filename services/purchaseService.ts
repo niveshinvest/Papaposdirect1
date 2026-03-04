@@ -177,7 +177,9 @@ export const purchaseService = {
     if (invErr) throw new Error(`Invoice Error: ${invErr.message}`);
 
     // 5. Mark OCR as Processed
-    const { error: ocrErr } = await client.from('ocr_invoice_results').update({ status: 'PROCESSED' }).eq('id', ocrId);
-    if (ocrErr) throw new Error(`OCR Status Error: ${ocrErr.message}`);
+    if (ocrId) {
+      const { error: ocrErr } = await client.from('ocr_invoice_results').update({ status: 'PROCESSED' }).eq('id', ocrId);
+      if (ocrErr) throw new Error(`OCR Status Error: ${ocrErr.message}`);
+    }
   }
 };

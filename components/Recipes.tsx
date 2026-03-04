@@ -602,7 +602,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
                     <button onClick={() => setIsManualRecipeOpen(false)} className="px-8 py-4 bg-white border border-slate-200 text-slate-400 rounded-2xl font-black uppercase tracking-widest text-[10px]">Cancel</button>
                     <button 
                       onClick={handleSaveManualRecipe}
-                      disabled={!manualForm.itemName || manualForm.ingredients.some(i => !i.name)}
+                      disabled={!manualForm.menuitemid || manualForm.ingredients.some(i => !i.name)}
                       className="px-12 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-all disabled:opacity-30"
                     >
                       Save Draft

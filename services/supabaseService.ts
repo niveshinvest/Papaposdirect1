@@ -229,11 +229,19 @@ export const menuService = {
 export const inventoryService = {
   async fetchBatches(outlet_id: string) {
     const { company_id } = await tenantContext.require();
+    // FIX START
     const { data, error } = await supabaseClient
       .from('inventory_batches')
-      .select('*')
+      .select('*, inventory(name)')
       .eq('company_id', company_id)
       .eq('outlet_id', outlet_id);
+    
+    if (data) {
+      data.forEach((b: any) => {
+        if (b.inventory?.name) b.item_id = b.inventory.name;
+      });
+    }
+    // FIX END
     if (error) throw error;
     return data || [];
   },
@@ -241,12 +249,20 @@ export const inventoryService = {
   async fetchLedger(outlet_id: string) {
     const { company_id } = await tenantContext.require();
 
+    // FIX START
     const { data, error } = await supabaseClient
       .from('inventory_ledger')
-      .select('*')
+      .select('*, inventory(name)')
       .eq('company_id', company_id)
       .eq('outlet_id', outlet_id)
       .order('created_at', { ascending: false });
+
+    if (data) {
+      data.forEach((l: any) => {
+        if (l.inventory?.name) l.item_id = l.inventory.name;
+      });
+    }
+    // FIX END
 
     if (error) throw new Error(error.message);
     return data || [];
@@ -258,15 +274,30 @@ export const inventoryService = {
       throw new Error('Safety Block: outlet_id missing');
     }
 
+    // FIX START
+    let resolvedItemId = payload.item_id;
+    if (resolvedItemId && !resolvedItemId.startsWith('INV-')) {
+      const { data: inv } = await supabaseClient
+        .from('inventory')
+        .select('id')
+        .eq('company_id', company_id)
+        .eq('outlet_id', payload.outlet_id)
+        .ilike('name', resolvedItemId)
+        .maybeSingle();
+      if (inv) resolvedItemId = inv.id;
+    }
+
     // 1. Insert into Ledger
     const { error: ledgerError } = await supabaseClient
       .from('inventory_ledger')
       .insert({
         ...payload,
+        item_id: resolvedItemId,
         company_id,            // 🔒
         created_by: user_id,
         created_at: new Date().toISOString()
       });
+    // FIX END
 
     if (ledgerError) throw new Error(ledgerError.message);
 
