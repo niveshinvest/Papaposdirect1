@@ -163,7 +163,11 @@ export const recipeService = {
 
     // Resolve ingredients by name to inventory IDs if missing
     const resolvedIngredients = await Promise.all(payload.ingredients.map(async (ing) => {
-      if (ing.inventoryItemId) return ing;
+      // FIX START: Prioritize inventory_id (UUID)
+      const invId = ing.inventoryItemId || (ing as any).inventory_id;
+      if (invId) {
+        return { ...ing, inventory_id: invId };
+      }
       
       const { data: invItem } = await client
         .from('inventory')
@@ -175,8 +179,9 @@ export const recipeService = {
         
       return {
         ...ing,
-        inventoryItemId: invItem?.id || null
+        inventory_id: invItem?.id || null
       };
+      // FIX END
     }));
 
     const recipeJson = {

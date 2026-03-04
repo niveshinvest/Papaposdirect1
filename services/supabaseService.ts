@@ -238,7 +238,9 @@ export const inventoryService = {
     
     if (data) {
       data.forEach((b: any) => {
-        if (b.inventory?.name) b.item_id = b.inventory.name;
+        b.inventory_id = b.item_id; // 🔒 Preserve ID
+        b.item_name = b.inventory?.name || 'Unknown'; // Display Metadata
+        if (b.inventory?.name) b.item_id = b.inventory.name; // UI Compatibility
       });
     }
     // FIX END
@@ -259,7 +261,9 @@ export const inventoryService = {
 
     if (data) {
       data.forEach((l: any) => {
-        if (l.inventory?.name) l.item_id = l.inventory.name;
+        l.inventory_id = l.item_id; // 🔒 Preserve ID
+        l.item_name = l.inventory?.name || 'Unknown'; // Display Metadata
+        if (l.inventory?.name) l.item_id = l.inventory.name; // UI Compatibility
       });
     }
     // FIX END
