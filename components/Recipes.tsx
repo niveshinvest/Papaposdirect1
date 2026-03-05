@@ -35,6 +35,8 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
   // Manual Form State
   const [manualForm, setManualForm] = useState({
     menuitemid:'',
+    itemname:'',
+    outletid:'',
     ingredients: [{ inventoryItemId: '', name: '', quantity: 0, unit: 'gram', cost: 0 }],
     steps: [''],
     yield: 1,
@@ -95,13 +97,20 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
     try {
       console.log("RECIPES_UI: TRIGGER_MANUAL_SAVE", manualForm);
       await recipeService.createManualRecipe({
-        ...manualForm,
-        outletId: activeOutlet.id
+        menuitemid: manualForm.menuitemid,
+        itemName: manualForm.itemname,
+        outletId: activeOutlet.id, // Use activeOutlet.id directly to be safe
+        ingredients: manualForm.ingredients,
+        steps: manualForm.steps,
+        yield: manualForm.yield,
+        notes: manualForm.notes
       });
       await loadData();
       setIsManualRecipeOpen(false);
       setManualForm({
         menuitemid:'',
+        itemname:'',
+        outletid:activeOutlet.id,
         ingredients: [{ inventoryItemId: '', name: '', quantity: 0, unit: 'gram', cost: 0 }],
         steps: [''],
         yield: 1,
@@ -127,7 +136,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
   const handleFinalizeRecipe = async (recipeId: string) => {
     try {
       console.log("RECIPES_UI: TRIGGER_FINALIZE", { recipeId });
-      await recipeService.finalizeRecipe(recipeId);
+      await recipeService.finalizeRecipe(recipeId,activeOutlet.id);
       await loadData();
     } catch (error: any) {
       console.error("RECIPES_UI: FINALIZE_ERROR", error);
@@ -136,8 +145,9 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
   };
 
   const handleRejectRecipe = async (recipeId: string) => {
+    if (!activeOutlet) return;
     try {
-      await recipeService.rejectRecipe(recipeId);
+      await recipeService.rejectRecipe(recipeId, activeOutlet.id);
       await loadData();
     } catch (error: any) {
       alert(`Failed to reject: ${error.message}`);

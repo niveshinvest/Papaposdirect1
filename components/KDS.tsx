@@ -57,7 +57,7 @@ const KDS: React.FC<KDSProps> = ({ activeOutletId }) => {
 
   const handleStatusUpdate = async (ticket: any, nextStatus: string) => {
     try {
-      await kitchenService.updateTicketStatus(ticket.id, ticket.status, nextStatus);
+      await kitchenService.updateTicketStatus(ticket.id, ticket.status, nextStatus, ticket.outlet_id);
       await loadTickets();
     } catch (e) {
       alert("Failed to update kitchen status.");

@@ -314,7 +314,7 @@ export interface Recipe {
   ingredients: RecipeIngredient[];
   totalCost: number;
   yield: number;
-  status: 'manual' | 'ai_generated' | 'approved';
+  status: 'DRAFT' | 'QUEUED' | 'FINALIZED' | 'REJECTED';
 }
 
 export interface PurchaseOrder {

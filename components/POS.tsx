@@ -553,7 +553,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
       depleteInventoryForOrder(totals.processedItems, activeOutlet.id);
       // FIX END
 
-      setLastInvoice({ ...invoice, items: totals.processedItems });
+      setLastInvoice({ ...invoice, items: totals.processedItems, taxBreakup: totals.taxBreakup });
       setShowPrintPreview(true);
       
       // Auto-trigger print if silent mode is supported and enabled
@@ -625,18 +625,20 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
           @page { margin: 0; }
           body { margin: 0; padding: 0; background: #fff; }
           body * { visibility: hidden; }
-          #print-area, #print-area * { visibility: visible; }
+          #print-area, #print-area * { visibility: visible !important; }
           #print-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: ${paperWidth === '80mm' ? '300px' : '220px'};
+            display: block !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: ${paperWidth === '80mm' ? '300px' : '220px'} !important;
             padding: 5px;
             font-family: 'Courier New', Courier, monospace;
             font-size: 12px;
             color: #000;
             background: #fff;
             line-height: 1.2;
+            z-index: 9999;
           }
           .no-print { display: none !important; }
           .dotted-line { border-bottom: 1px dotted #000; margin: 5px 0; width: 100%; }
@@ -1184,10 +1186,10 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
         <div className="right">
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>{activeOutlet?.gst_registered ? 'SUBTOTAL:' : 'TOTAL:'}</span>
-            <span>{totals.subtotal.toFixed(2)}</span>
+            <span>{(lastInvoice?.subtotal || 0).toFixed(2)}</span>
           </div>
           
-          {activeOutlet?.gst_registered && Object.entries(totals.taxBreakup).map(([rate, vals]: [string, any]) => (
+          {activeOutlet?.gst_registered && lastInvoice?.taxBreakup && Object.entries(lastInvoice.taxBreakup).map(([rate, vals]: [string, any]) => (
             <div key={rate}>
                {vals.igst > 0 ? (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1212,20 +1214,20 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
           {activeOutlet?.gst_registered && (
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>TOTAL TAX:</span>
-              <span>{totals.totalTax.toFixed(2)}</span>
+              <span>{(lastInvoice?.total_tax || 0).toFixed(2)}</span>
             </div>
           )}
 
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>ROUND OFF:</span>
-            <span>{totals.roundOff.toFixed(2)}</span>
+            <span>{(lastInvoice?.round_off || 0).toFixed(2)}</span>
           </div>
 
           <div className="dotted-line"></div>
 
           <div className="bold large" style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
             <span>GRAND TOTAL:</span>
-            <span>₹{totals.grandTotal.toFixed(0)}</span>
+            <span>₹{(lastInvoice?.grand_total || 0).toFixed(0)}</span>
           </div>
         </div>
 

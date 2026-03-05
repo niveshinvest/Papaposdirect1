@@ -156,6 +156,8 @@ export const recipeService = {
       const { data: menuItem } = await client
         .from('menu_items')
         .select('name')
+        .eq('company_id', profile.company_id)
+        .eq('outlet_id', payload.outletId)
         .eq('id', payload.menuitemid)
         .single();
       if (menuItem) resolvedItemName = menuItem.name;
@@ -225,7 +227,6 @@ export const recipeService = {
   async queueRecipe(recipeId: string, outletId: string): Promise<RecipeEntry> {
     const profile = await authService.getProfile();
     if (!profile?.company_id) throw new Error("Company ID missing from profile");
-   // if (!profile?.outlet_id) throw new Error("Outlet ID missing from profile");
 
     const client = getSupabase();
     if (!client) throw new Error("Supabase client not initialized");
@@ -234,6 +235,8 @@ export const recipeService = {
     const { data: current, error: fetchError } = await client
       .from('recipes')
       .select('status')
+      .eq('company_id', profile.company_id)
+      .eq('outlet_id', outletId)
       .eq('id', recipeId)
       .single();
 
@@ -259,10 +262,9 @@ export const recipeService = {
    * - Lock recipe from edits
    * - Make available to POS
    */
-  async finalizeRecipe(recipeId: string): Promise<RecipeEntry> {
-        const profile = await authService.getProfile();
-        if (!profile?.company_id) throw new Error("Company ID missing from profile");
-        if (!profile?.outlet_id) throw new Error("Outlet ID missing from profile");
+  async finalizeRecipe(recipeId: string, outletId: string): Promise<RecipeEntry> {
+    const profile = await authService.getProfile();
+    if (!profile?.company_id) throw new Error("Company ID missing from profile");
 
     const client = getSupabase();
     if (!client) throw new Error("Supabase client not initialized");
@@ -272,7 +274,7 @@ export const recipeService = {
       .from('recipes')
       .update({ status: 'FINALIZED' })
       .eq('company_id', profile.company_id)
-      .eq('outlet_id', profile.outlet_id)
+      .eq('outlet_id', outletId)
       .eq('id', recipeId)
       .select()
       .single();
@@ -338,13 +340,18 @@ export const recipeService = {
     return data;
   },
 
-  async rejectRecipe(recipeId: string): Promise<void> {
+  async rejectRecipe(recipeId: string, outletId: string): Promise<void> {
+    const profile = await authService.getProfile();
+    if (!profile?.company_id) throw new Error("Company ID missing from profile");
+
     const client = getSupabase();
     if (!client) throw new Error("Supabase client not initialized");
 
     const { error } = await client
       .from('recipes')
       .update({ status: 'REJECTED' })
+      .eq('company_id', profile.company_id)
+      .eq('outlet_id', outletId)
       .eq('id', recipeId);
 
     if (error) throw new Error(error.message);

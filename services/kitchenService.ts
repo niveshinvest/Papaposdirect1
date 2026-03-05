@@ -8,10 +8,13 @@ export const kitchenService = {
   async fetchActiveTickets(outletId: string) {
     const client = getSupabase();
     if (!client) return [];
+    const profile = await authService.getProfile();
+    if (!profile?.company_id) return [];
     
     const { data, error } = await client
       .from('kitchen_orders')
       .select('*')
+      .eq('company_id', profile.company_id)
       .eq('outlet_id', outletId)
       .in('status', ['PENDING', 'PREPARING', 'READY'])
       .order('created_at', { ascending: true });
@@ -21,18 +24,45 @@ export const kitchenService = {
   },
 
   /**
-   * Transitions a kitchen order to a new state and logs the event via RPC.
+   * Transitions a kitchen order to a new state.
+   * Enforces company_id and outlet_id filters.
    */
-  async updateTicketStatus(ticketId: string, currentStatus: string, nextStatus: string) {
+  async updateTicketStatus(ticketId: string, currentStatus: string, nextStatus: string, outletId: string) {
     const client = getSupabase();
     if (!client) return;
+    const profile = await authService.getProfile();
+    if (!profile?.company_id) throw new Error("Unauthorized");
     
-    const { error } = await client.rpc('update_kitchen_ticket_status', {
-      p_ticket_id: ticketId,
-      p_current_status: currentStatus,
-      p_next_status: nextStatus
-    });
+    const { error } = await client
+      .from('kitchen_orders')
+      .update({ 
+        status: nextStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', ticketId)
+      .eq('company_id', profile.company_id)
+      .eq('outlet_id', outletId);
       
+    if (error) throw new Error(error.message);
+  },
+
+  /**
+   * Deletes a kitchen ticket.
+   * Enforces company_id and outlet_id filters.
+   */
+  async deleteTicket(ticketId: string, outletId: string) {
+    const client = getSupabase();
+    if (!client) return;
+    const profile = await authService.getProfile();
+    if (!profile?.company_id) throw new Error("Unauthorized");
+
+    const { error } = await client
+      .from('kitchen_orders')
+      .delete()
+      .eq('id', ticketId)
+      .eq('company_id', profile.company_id)
+      .eq('outlet_id', outletId);
+
     if (error) throw new Error(error.message);
   },
 
@@ -60,7 +90,8 @@ export const kitchenService = {
         table_name: payload.table_name || 'Takeaway',
         items: payload.items,
         priority: payload.priority || 'NORMAL',
-        status: 'PENDING'
+        status: 'PENDING',
+        staff_user_id: profile.id
       })
       .select()
       .single();

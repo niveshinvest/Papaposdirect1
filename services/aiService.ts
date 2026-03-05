@@ -120,7 +120,7 @@ export const aiService = {
     ] = await Promise.all([
       client.from('invoice_items').select('*, invoices!inner(outlet_id, created_at)').eq('invoices.outlet_id', outletId).gte('invoices.created_at', last30Days.toISOString()),
       client.from('menu_items').select('*, menu_categories(name)').eq('outlet_id', outletId),
-      client.from('recipes').select('menuItemId, totalCost').eq('company_id', profile.company_id)
+      client.from('recipes').select('menuItemId, totalCost').eq('company_id', profile.company_id).eq('outlet_id', outletId)
     ]);
 
     const rowCount = (salesHistory?.length || 0) + (menuSnapshot?.length || 0);
