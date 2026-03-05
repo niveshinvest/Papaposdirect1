@@ -136,7 +136,7 @@ export const recipeService = {
    */
   async createManualRecipe(payload: {
     menuitemid?: string;
-    itemName?: string;
+    itemName:string;
     outletId: string;
     ingredients: Array<{ name: string; quantity: number; unit: string; cost: number; inventoryItemId?: string }>;
     steps: string[];
@@ -223,6 +223,10 @@ export const recipeService = {
    * - Reject if recipe not in DRAFT
    */
   async queueRecipe(recipeId: string): Promise<RecipeEntry> {
+    const profile = await authService.getProfile();
+    if (!profile?.company_id) throw new Error("Company ID missing from profile");
+    if (!profile?.outlet_id) throw new Error("Outlet ID missing from profile");
+
     const client = getSupabase();
     if (!client) throw new Error("Supabase client not initialized");
 
@@ -239,6 +243,8 @@ export const recipeService = {
     const { data, error } = await client
       .from('recipes')
       .update({ status: 'QUEUED' })
+      .eq('company_id', profile.company_id)
+      .eq('outlet_id', profile.outlet_id)
       .eq('id', recipeId)
       .select()
       .single();
@@ -254,12 +260,19 @@ export const recipeService = {
    * - Make available to POS
    */
   async finalizeRecipe(recipeId: string): Promise<RecipeEntry> {
+        const profile = await authService.getProfile();
+        if (!profile?.company_id) throw new Error("Company ID missing from profile");
+        if (!profile?.outlet_id) throw new Error("Outlet ID missing from profile");
+
     const client = getSupabase();
     if (!client) throw new Error("Supabase client not initialized");
+
 
     const { data, error } = await client
       .from('recipes')
       .update({ status: 'FINALIZED' })
+      .eq('company_id', profile.company_id)
+      .eq('outlet_id', profile.outlet_id)
       .eq('id', recipeId)
       .select()
       .single();
