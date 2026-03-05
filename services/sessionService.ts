@@ -28,6 +28,7 @@ export const sessionService = {
     const userAgent = navigator.userAgent;
 console.log("this is outletid", outletId)
     profile.outlet_id=outletId;
+    console.log("this is profile.outletid", profile.outlet_id)
     // Cache active outlet for audit scope
     localStorage.setItem('papapos_active_outlet_id', outletId);
 
