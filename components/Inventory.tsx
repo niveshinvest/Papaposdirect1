@@ -38,6 +38,8 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
   const [stockTakeItems, setStockTakeItems] = useState<any[]>([]);
   const [isStockTakeProcessing, setIsStockTakeProcessing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('All');
+  const [vendorFilter, setVendorFilter] = useState('All');
   
   // Import States
   const [importStep, setImportStep] = useState<'upload' | 'preview' | 'success'>('upload');
@@ -239,7 +241,7 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
     try {
       for (const item of ocrData.items) {
         await inventoryService.recordStockIn({
-          item_id: item.name,
+          item_id: item.matched_inventory_id || item.name,
           qty: parseFloat(item.qty || 0),
           cost_price: parseFloat(item.price || 0),
           batch_code: ocrData.invoice_number || 'AI-OCR-INBOUND',
@@ -260,7 +262,17 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
     const map: Record<string, any> = {};
     batches.forEach(b => {
       if (!map[b.item_id]) {
-        map[b.item_id] = { item_id: b.item_id, total_qty: 0, total_value: 0, batches_count: 0, unit: b.unit || 'units' };
+        const master = masterItems.find(m => m.id === b.item_id || m.name === b.item_id);
+        map[b.item_id] = { 
+          item_id: b.item_id, 
+          total_qty: 0, 
+          total_value: 0, 
+          batches_count: 0, 
+          unit: b.unit || 'units',
+          min_level: master?.min_level || 0,
+          category: master?.category || 'General',
+          vendor: master?.preferred_vendor || 'N/A'
+        };
       }
       map[b.item_id].total_qty += Number(b.current_qty);
       map[b.item_id].total_value += Number(b.current_qty) * Number(b.cost_price || 0);
@@ -270,9 +282,35 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
       ...item,
       wac: item.total_qty > 0 ? item.total_value / item.total_qty : 0
     }));
-  }, [batches]);
+  }, [batches, masterItems]);
 
-  const filteredStock = aggregatedStock.filter(s => s.item_id.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredStock = useMemo(() => {
+    return aggregatedStock.filter(s => {
+      const matchesSearch = s.item_id.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = categoryFilter === 'All' || s.category === categoryFilter;
+      const matchesVendor = vendorFilter === 'All' || s.vendor === vendorFilter;
+      return matchesSearch && matchesCategory && matchesVendor;
+    });
+  }, [aggregatedStock, searchQuery, categoryFilter, vendorFilter]);
+
+  const filteredMaster = useMemo(() => {
+    return masterItems.filter(m => {
+      const matchesSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = categoryFilter === 'All' || m.category === categoryFilter;
+      const matchesVendor = vendorFilter === 'All' || m.preferred_vendor === vendorFilter;
+      return matchesSearch && matchesCategory && matchesVendor;
+    });
+  }, [masterItems, searchQuery, categoryFilter, vendorFilter]);
+
+  const categories = useMemo(() => {
+    const cats = new Set(masterItems.map(m => m.category));
+    return ['All', ...Array.from(cats)];
+  }, [masterItems]);
+
+  const vendors = useMemo(() => {
+    const vens = new Set(masterItems.map(m => m.preferred_vendor).filter(Boolean));
+    return ['All', ...Array.from(vens)];
+  }, [masterItems]);
 
   const expiringSoonCount = useMemo(() => {
     const nextWeek = new Date();
@@ -281,8 +319,7 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
   }, [batches]);
 
   const lowStockCount = useMemo(() => {
-    // Threshold of 10 for now, could be dynamic per item in future
-    return aggregatedStock.filter(s => s.total_qty < 10).length;
+    return aggregatedStock.filter(s => s.total_qty < s.min_level).length;
   }, [aggregatedStock]);
 
   if (loading && batches.length === 0) {
@@ -298,7 +335,7 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
     <div className="p-8 space-y-8 min-h-screen pb-32 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Stock Master</h2>
+          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Inventory Pro</h2>
           <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mt-1 flex items-center gap-2">
             <MapPin size={14} className="text-orange-500" /> {activeOutlet?.name} • Real-time Cloud
           </p>
@@ -387,8 +424,8 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
       </div>
 
       <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
-        <div className="p-6 border-b flex bg-slate-50/50">
-           <div className="relative flex-1 max-w-md">
+        <div className="p-6 border-b flex flex-wrap gap-4 bg-slate-50/50">
+           <div className="relative flex-1 min-w-[300px]">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
               <input 
                 type="text" placeholder="Search by item name..." 
@@ -396,6 +433,24 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
               />
+           </div>
+           
+           <div className="flex gap-4">
+              <select 
+                value={categoryFilter}
+                onChange={e => setCategoryFilter(e.target.value)}
+                className="px-6 py-3 bg-white border border-slate-200 rounded-2xl font-bold text-slate-600 outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {categories.map(cat => <option key={cat} value={cat}>{cat === 'All' ? 'All Categories' : cat}</option>)}
+              </select>
+              
+              <select 
+                value={vendorFilter}
+                onChange={e => setVendorFilter(e.target.value)}
+                className="px-6 py-3 bg-white border border-slate-200 rounded-2xl font-bold text-slate-600 outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {vendors.map(ven => <option key={ven} value={ven}>{ven === 'All' ? 'All Vendors' : ven}</option>)}
+              </select>
            </div>
         </div>
 
@@ -424,7 +479,14 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
                        ₹{item.wac.toFixed(2)}
                     </td>
                     <td className="px-8 py-6 text-right">
-                       <p className="font-black text-xl text-slate-900">{item.total_qty.toFixed(2)}</p>
+                       <p className={`font-black text-xl ${item.total_qty < item.min_level ? 'text-rose-600 animate-pulse' : 'text-slate-900'}`}>
+                         {item.total_qty.toFixed(2)}
+                       </p>
+                       {item.total_qty < item.min_level && (
+                         <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest mt-1 flex items-center justify-end gap-1">
+                           <TrendingDown size={10} /> Low Stock
+                         </p>
+                       )}
                     </td>
                     <td className="px-8 py-6 text-right">
                        <button onClick={() => { setView('LEDGER'); setSearchQuery(item.item_id); }} className="text-[10px] font-black uppercase text-indigo-600 tracking-widest hover:underline">Full History</button>
@@ -488,7 +550,7 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
                   </tr>
                </thead>
                <tbody className="divide-y divide-slate-100">
-                  {masterItems.filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase())).map((item) => (
+                  {filteredMaster.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
                        <td className="px-8 py-6">
                           <p className="font-black text-slate-900">{item.name}</p>
@@ -791,7 +853,18 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
                              <tbody className="divide-y divide-slate-100">
                                 {ocrData.items?.map((item: any, i: number) => (
                                   <tr key={i}>
-                                    <td className="px-6 py-4 font-bold text-slate-800">{item.name}</td>
+                                    <td className="px-6 py-4">
+                                       <p className="font-bold text-slate-800">{item.name}</p>
+                                       {item.matched_inventory_id ? (
+                                         <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-1 mt-1">
+                                           <ShieldCheck size={10} /> Matched: {item.matched_inventory_id}
+                                         </p>
+                                       ) : (
+                                         <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest flex items-center gap-1 mt-1">
+                                           <Zap size={10} /> Suggestion: {item.suggested_inventory_name || 'New Item'}
+                                         </p>
+                                       )}
+                                    </td>
                                     <td className="px-6 py-4 text-center font-black">{item.qty} {item.unit}</td>
                                     <td className="px-6 py-4 text-right font-black">₹{item.price}</td>
                                   </tr>
