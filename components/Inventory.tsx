@@ -7,7 +7,7 @@ import {
   TrendingDown, ShieldCheck, Flame, Scale, Calendar, FileSpreadsheet, Upload, Download, CheckCircle, Zap, FileText, MonitorPlay
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { inventoryService, getSupabase } from '../services/supabaseService';
+import { inventoryService, inventoryMasterService, getSupabase } from '../services/supabaseService';
 import { ocrService } from '../services/ocrService';
 
 interface InventoryProps {
@@ -18,12 +18,23 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
   const [batches, setBatches] = useState<any[]>([]);
   const [ledger, setLedger] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'STOCK' | 'LEDGER'>('STOCK');
+  const [view, setView] = useState<'STOCK' | 'LEDGER' | 'MASTER'>('STOCK');
   const [isStockInModalOpen, setIsStockInModalOpen] = useState(false);
   const [isWastageModalOpen, setIsWastageModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isOcrModalOpen, setIsOcrModalOpen] = useState(false);
   const [isStockTakeModalOpen, setIsStockTakeModalOpen] = useState(false);
+  const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
+  const [masterItems, setMasterItems] = useState<any[]>([]);
+  const [editingMasterItem, setEditingMasterItem] = useState<any>(null);
+  const [masterFormData, setMasterFormData] = useState({
+    name: '',
+    unit: 'kg',
+    category: 'General',
+    cost_price: 0,
+    min_level: 0,
+    preferred_vendor: ''
+  });
   const [stockTakeItems, setStockTakeItems] = useState<any[]>([]);
   const [isStockTakeProcessing, setIsStockTakeProcessing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -62,12 +73,14 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
     if (!activeOutlet) return;
     setLoading(true);
     try {
-      const [batchData, ledgerData] = await Promise.all([
+      const [batchData, ledgerData, masterData] = await Promise.all([
         inventoryService.fetchBatches(activeOutlet.id),
-        inventoryService.fetchLedger(activeOutlet.id)
+        inventoryService.fetchLedger(activeOutlet.id),
+        inventoryMasterService.fetchAll(activeOutlet.id)
       ]);
       setBatches(batchData);
       setLedger(ledgerData);
+      setMasterItems(masterData);
     } catch (e) {
       console.error(e);
     } finally {
@@ -154,6 +167,41 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
       setIsWastageModalOpen(false);
     } catch (err) {
       alert("Wastage logging failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMasterSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeOutlet) return;
+    setLoading(true);
+    try {
+      const payload = {
+        ...masterFormData,
+        id: editingMasterItem?.id || `INV-${Date.now()}`,
+        outlet_id: activeOutlet.id
+      };
+      await inventoryMasterService.save(payload);
+      await loadData();
+      setIsMasterModalOpen(false);
+      setEditingMasterItem(null);
+      setMasterFormData({ name: '', unit: 'kg', category: 'General', cost_price: 0, min_level: 0, preferred_vendor: '' });
+    } catch (err) {
+      alert("Failed to save inventory item.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMasterDelete = async (id: string) => {
+    if (!activeOutlet || !window.confirm("Are you sure you want to delete this item?")) return;
+    setLoading(true);
+    try {
+      await inventoryMasterService.delete(id, activeOutlet.id);
+      await loadData();
+    } catch (err) {
+      alert("Failed to delete inventory item.");
     } finally {
       setLoading(false);
     }
@@ -263,6 +311,13 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
              {view === 'STOCK' ? <History size={18} /> : <Package size={18} />}
              {view === 'STOCK' ? 'View Ledger' : 'View Stock'}
            </button>
+           <button 
+            onClick={() => setView('MASTER')}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all border shrink-0 ${view === 'MASTER' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border-slate-200'}`}
+           >
+             <Tag size={18} />
+             Master List
+           </button>
            <button onClick={() => { setOcrStep('upload'); setIsOcrModalOpen(true); }} className="flex items-center gap-2 bg-white border border-indigo-200 text-indigo-600 px-6 py-3 rounded-xl font-bold shadow-sm hover:bg-indigo-50 transition-all shrink-0">
              <Zap size={18} className="text-indigo-500" /> AI Invoice Scan
            </button>
@@ -283,8 +338,19 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
             }} className="flex items-center gap-2 bg-indigo-50 text-indigo-600 border border-indigo-100 px-6 py-3 rounded-xl font-bold shadow-sm hover:bg-indigo-100 transition-all shrink-0">
               <Scale size={18} /> Stock Take
             </button>
-           <button onClick={() => setIsStockInModalOpen(true)} className="flex items-center gap-2 bg-[#FF6B00] text-white px-8 py-3 rounded-xl font-black shadow-xl hover:scale-105 transition-all shrink-0">
-             <Plus size={20} /> Stock In
+           <button 
+            onClick={() => {
+              if (view === 'MASTER') {
+                setEditingMasterItem(null);
+                setMasterFormData({ name: '', unit: 'kg', category: 'General', cost_price: 0, min_level: 0, preferred_vendor: '' });
+                setIsMasterModalOpen(true);
+              } else {
+                setIsStockInModalOpen(true);
+              }
+            }} 
+            className="flex items-center gap-2 bg-[#FF6B00] text-white px-8 py-3 rounded-xl font-black shadow-xl hover:scale-105 transition-all shrink-0"
+           >
+             <Plus size={20} /> {view === 'MASTER' ? 'New SKU' : 'Stock In'}
            </button>
         </div>
       </div>
@@ -367,7 +433,7 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
                 ))}
               </tbody>
             </table>
-          ) : (
+          ) : view === 'LEDGER' ? (
             <table className="w-full text-left">
                <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest">
                   <tr>
@@ -404,6 +470,66 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
                           </div>
                        </td>
                        <td className="px-8 py-6 text-right font-black text-slate-900">{log.balance_after}</td>
+                    </tr>
+                  ))}
+               </tbody>
+            </table>
+          ) : (
+            <table className="w-full text-left">
+               <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                  <tr>
+                    <th className="px-8 py-5">SKU Name</th>
+                    <th className="px-8 py-5">Category</th>
+                    <th className="px-8 py-5">Unit</th>
+                    <th className="px-8 py-5 text-right">Cost Price</th>
+                    <th className="px-8 py-5 text-right">Min Level</th>
+                    <th className="px-8 py-5">Vendor</th>
+                    <th className="px-8 py-5 text-right">Actions</th>
+                  </tr>
+               </thead>
+               <tbody className="divide-y divide-slate-100">
+                  {masterItems.filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase())).map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                       <td className="px-8 py-6">
+                          <p className="font-black text-slate-900">{item.name}</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{item.id}</p>
+                       </td>
+                       <td className="px-8 py-6">
+                          <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-[10px] font-black uppercase">{item.category}</span>
+                       </td>
+                       <td className="px-8 py-6 font-bold text-slate-600 uppercase text-xs">{item.unit}</td>
+                       <td className="px-8 py-6 text-right font-black text-slate-900">₹{item.cost_price}</td>
+                       <td className="px-8 py-6 text-right">
+                          <span className={`font-black ${item.quantity < item.min_level ? 'text-rose-600' : 'text-slate-900'}`}>{item.min_level}</span>
+                       </td>
+                       <td className="px-8 py-6 text-slate-500 font-medium">{item.preferred_vendor || 'N/A'}</td>
+                       <td className="px-8 py-6 text-right">
+                          <div className="flex justify-end gap-2">
+                             <button 
+                              onClick={() => {
+                                setEditingMasterItem(item);
+                                setMasterFormData({
+                                  name: item.name,
+                                  unit: item.unit,
+                                  category: item.category,
+                                  cost_price: item.cost_price,
+                                  min_level: item.min_level,
+                                  preferred_vendor: item.preferred_vendor || ''
+                                });
+                                setIsMasterModalOpen(true);
+                              }}
+                              className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                             >
+                                <MonitorPlay size={16} />
+                             </button>
+                             <button 
+                              onClick={() => handleMasterDelete(item.id)}
+                              className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                             >
+                                <Trash2 size={16} />
+                             </button>
+                          </div>
+                       </td>
                     </tr>
                   ))}
                </tbody>
@@ -798,6 +924,87 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
                     </button>
                  </div>
               </div>
+           </div>
+        </div>
+      )}
+      {/* SKU MASTER MODAL */}
+      {isMasterModalOpen && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
+           <div className="bg-white rounded-[48px] w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+              <div className="p-10 bg-indigo-600 text-white flex justify-between items-center">
+                 <h3 className="text-2xl font-black tracking-tight uppercase">{editingMasterItem ? 'Edit SKU' : 'New SKU Definition'}</h3>
+                 <button onClick={() => setIsMasterModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-all"><X size={24} /></button>
+              </div>
+              <form onSubmit={handleMasterSave} className="p-10 space-y-6">
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Name</label>
+                    <input 
+                      required className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900 outline-none" 
+                      placeholder="e.g. Tomato Sauce" 
+                      value={masterFormData.name} 
+                      onChange={e => setMasterFormData({...masterFormData, name: e.target.value})} 
+                    />
+                 </div>
+                 <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Category</label>
+                       <input 
+                        className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900 outline-none" 
+                        placeholder="e.g. Vegetables"
+                        value={masterFormData.category} 
+                        onChange={e => setMasterFormData({...masterFormData, category: e.target.value})} 
+                       />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base Unit</label>
+                       <select 
+                        className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900 outline-none"
+                        value={masterFormData.unit} 
+                        onChange={e => setMasterFormData({...masterFormData, unit: e.target.value})} 
+                       >
+                          <option value="kg">Kilograms (kg)</option>
+                          <option value="gm">Grams (gm)</option>
+                          <option value="ltr">Liters (ltr)</option>
+                          <option value="ml">Milliliters (ml)</option>
+                          <option value="pcs">Pieces (pcs)</option>
+                          <option value="box">Box</option>
+                          <option value="pkt">Packet</option>
+                       </select>
+                    </div>
+                 </div>
+                 <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Standard Cost</label>
+                       <input 
+                        type="number" required 
+                        className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900 outline-none" 
+                        value={masterFormData.cost_price} 
+                        onChange={e => setMasterFormData({...masterFormData, cost_price: parseFloat(e.target.value)})} 
+                       />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Min Stock Level</label>
+                       <input 
+                        type="number" required 
+                        className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900 outline-none" 
+                        value={masterFormData.min_level} 
+                        onChange={e => setMasterFormData({...masterFormData, min_level: parseFloat(e.target.value)})} 
+                       />
+                    </div>
+                 </div>
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Preferred Vendor</label>
+                    <input 
+                      className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900 outline-none" 
+                      placeholder="e.g. Metro Wholesale" 
+                      value={masterFormData.preferred_vendor} 
+                      onChange={e => setMasterFormData({...masterFormData, preferred_vendor: e.target.value})} 
+                    />
+                 </div>
+                 <button type="submit" className="w-full py-6 bg-indigo-600 text-white rounded-[28px] font-black uppercase tracking-widest text-sm shadow-2xl">
+                    {editingMasterItem ? 'Update SKU' : 'Create SKU'}
+                 </button>
+              </form>
            </div>
         </div>
       )}

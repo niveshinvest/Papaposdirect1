@@ -426,6 +426,59 @@ export const inventoryService = {
 };
 
 /* ============================================================================
+   INVENTORY MASTER (SKU MANAGEMENT)
+============================================================================ */
+export const inventoryMasterService = {
+  async fetchAll(outlet_id: string) {
+    const { company_id } = await tenantContext.require();
+
+    const { data, error } = await supabaseClient
+      .from('inventory')
+      .select('*')
+      .eq('company_id', company_id)
+      .eq('outlet_id', outlet_id)
+      .order('name');
+
+    if (error) throw new Error(error.message);
+    return data || [];
+  },
+
+  async save(item: any) {
+    const { company_id, user_id } = await tenantContext.require();
+
+    const payload = {
+      ...item,
+      company_id,
+      outlet_id: item.outlet_id,
+      created_by: user_id,
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabaseClient
+      .from('inventory')
+      .upsert(payload)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async delete(id: string, outlet_id: string) {
+    const { company_id } = await tenantContext.require();
+
+    const { error } = await supabaseClient
+      .from('inventory')
+      .delete()
+      .eq('id', id)
+      .eq('company_id', company_id)
+      .eq('outlet_id', outlet_id);
+
+    if (error) throw new Error(error.message);
+  }
+};
+
+/* ============================================================================
    PAYMENT MODES (OUTLET + COMPANY)
 ============================================================================ */
 export const paymentService = {
