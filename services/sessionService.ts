@@ -26,7 +26,7 @@ export const sessionService = {
     const profile = await authService.getProfile();
     const terminalId = this.getTerminalId();
     const userAgent = navigator.userAgent;
-
+console.log("this is outletid", outletId)
     profile.outlet_id=outletId;
     // Cache active outlet for audit scope
     localStorage.setItem('papapos_active_outlet_id', outletId);
