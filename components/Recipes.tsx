@@ -116,7 +116,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
   const handleQueueRecipe = async (recipeId: string) => {
     try {
       console.log("RECIPES_UI: TRIGGER_QUEUE", { recipeId });
-      await recipeService.queueRecipe(recipeId);
+      await recipeService.queueRecipe(recipeId,activeOutlet.id);
       await loadData();
     } catch (error: any) {
       console.error("RECIPES_UI: QUEUE_ERROR", error);
