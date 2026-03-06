@@ -133,7 +133,7 @@ export const recipeService = {
    * - RETURN saved record
    */
   async createManualRecipe(payload: {
-    menuitemid?: string;
+    menuitemid: string;
     itemName:string;
     outletId: string;
     ingredients: Array<{ name: string; quantity: number; unit: string; cost: number; inventoryItemId?: string }>;
@@ -195,6 +195,7 @@ export const recipeService = {
     const insertPayload = {
       company_id: profile.company_id,
       outlet_id: payload.outletId,
+      menu_item_id:payload.menuitemid,
       item_name: resolvedItemName,
       recipe_json: recipeJson,
       source: 'MANUAL',
