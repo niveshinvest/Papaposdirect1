@@ -29,7 +29,7 @@ export class GeminiAdapter implements AIAdapter {
       } : request.prompt || "";
 
       const response = await ai.models.generateContent({
-        model: config.model_name || "gemini-3-pro-preview",
+        model: config.model || "gemini-3-pro-preview",
         contents: contents as any,
         config: {
           systemInstruction: request.system_prompt,
@@ -61,7 +61,7 @@ export class OpenAIAdapter implements AIAdapter {
           "Authorization": `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: config.model_name,
+          model: config.model,
           messages: [
             ...(request.system_prompt ? [{ role: "system", content: request.system_prompt }] : []),
             { role: "user", content: request.prompt }
@@ -96,7 +96,7 @@ export class ClaudeAdapter implements AIAdapter {
           "anthropic-version": "2023-06-01"
         },
         body: JSON.stringify({
-          model: config.model_name,
+          model: config.model,
           system: request.system_prompt,
           messages: [{ role: "user", content: request.prompt }],
           max_tokens: request.max_tokens || 4096,
@@ -129,7 +129,7 @@ export class OpenRouterAdapter implements AIAdapter {
           "X-Title": "PapaPOS"
         },
         body: JSON.stringify({
-          model: config.model_name,
+          model: config.model,
           messages: [
             ...(request.system_prompt ? [{ role: "system", content: request.system_prompt }] : []),
             { role: "user", content: request.prompt }

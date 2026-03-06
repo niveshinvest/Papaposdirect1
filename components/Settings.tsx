@@ -47,10 +47,11 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [aiForm, setAiForm] = useState<Partial<AIProvider>>({
     provider_name: 'gemini',
-    model_name: '',
+    model: '',
     api_key: '',
     base_url: '',
-    is_active: false
+    is_active: false,
+    is_default: false
   });
 
   // Migration States
@@ -175,18 +176,27 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
     setLoading(true);
     try {
       const client = getSupabase();
+      const payload: any = {
+        company_id: org.id,
+        provider_name: aiForm.provider_name,
+        model: aiForm.model,
+        api_key: aiForm.api_key,
+        base_url: aiForm.base_url,
+        is_active: aiForm.is_active,
+        is_default: aiForm.is_default,
+        updated_at: new Date().toISOString()
+      };
+
+      if (aiForm.id) payload.id = aiForm.id;
+
       const { error } = await client
         .from('ai_providers')
-        .upsert({
-          ...aiForm,
-          company_id: org.id,
-          updated_at: new Date().toISOString()
-        });
+        .upsert(payload);
 
       if (error) throw error;
       await loadAIProviders();
       setIsAIModalOpen(false);
-      setAiForm({ provider_name: 'gemini', model_name: '', api_key: '', base_url: '', is_active: false });
+      setAiForm({ provider_name: 'gemini', model: '', api_key: '', base_url: '', is_active: false, is_default: false });
     } catch (err: any) {
       alert(`AI configuration failed: ${err.message}`);
     } finally {
@@ -481,7 +491,7 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
             </div>
             <button 
               onClick={() => {
-                setAiForm({ provider_name: 'gemini', model_name: '', api_key: '', base_url: '', is_active: false });
+                setAiForm({ provider_name: 'gemini', model: '', api_key: '', base_url: '', is_active: false, is_default: false });
                 setIsAIModalOpen(true);
               }}
               className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg"
@@ -531,7 +541,8 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
                           </div>
                           <div>
                             <p className="font-black text-slate-800 text-sm capitalize">{provider.provider_name}</p>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{provider.model_name || 'Default Model'}</p>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{provider.model || 'Default Model'}</p>
+                            {provider.is_default && <span className="text-[8px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-black uppercase ml-2">Default</span>}
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -742,8 +753,8 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
                     <input 
                       className="w-full px-6 py-4 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-indigo-500" 
                       placeholder="e.g. gemini-3-pro-preview / gpt-4o" 
-                      value={aiForm.model_name}
-                      onChange={e => setAiForm({...aiForm, model_name: e.target.value})}
+                      value={aiForm.model}
+                      onChange={e => setAiForm({...aiForm, model: e.target.value})}
                     />
                  </div>
                  <div className="space-y-2">
@@ -769,18 +780,31 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
                       />
                    </div>
                  )}
-                 <div className="flex items-center justify-between p-6 bg-emerald-50 rounded-3xl border border-emerald-100">
-                    <div>
-                       <p className="font-black text-emerald-900 text-sm">Active Provider</p>
-                       <p className="text-[10px] text-emerald-600 font-bold uppercase">Use this for all AI features</p>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="flex items-center justify-between p-6 bg-emerald-50 rounded-3xl border border-emerald-100">
+                        <div>
+                          <p className="font-black text-emerald-900 text-sm">Active</p>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => setAiForm({...aiForm, is_active: !aiForm.is_active})}
+                          className={`w-12 h-6 rounded-full transition-all relative ${aiForm.is_active ? 'bg-emerald-600' : 'bg-slate-300'}`}
+                        >
+                          <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-all ${aiForm.is_active ? 'right-0.5' : 'left-0.5'}`}></div>
+                        </button>
                     </div>
-                    <button 
-                      type="button"
-                      onClick={() => setAiForm({...aiForm, is_active: !aiForm.is_active})}
-                      className={`w-14 h-7 rounded-full transition-all relative ${aiForm.is_active ? 'bg-emerald-600' : 'bg-slate-300'}`}
-                    >
-                       <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-md transition-all ${aiForm.is_active ? 'right-1' : 'left-1'}`}></div>
-                    </button>
+                    <div className="flex items-center justify-between p-6 bg-indigo-50 rounded-3xl border border-indigo-100">
+                        <div>
+                          <p className="font-black text-indigo-900 text-sm">Default</p>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => setAiForm({...aiForm, is_default: !aiForm.is_default})}
+                          className={`w-12 h-6 rounded-full transition-all relative ${aiForm.is_default ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                        >
+                          <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-all ${aiForm.is_default ? 'right-0.5' : 'left-0.5'}`}></div>
+                        </button>
+                    </div>
                  </div>
                  <button type="submit" disabled={loading} className="w-full py-6 bg-slate-900 text-white rounded-[28px] font-black uppercase tracking-widest text-sm shadow-xl flex items-center justify-center gap-2">
                     {loading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />} 

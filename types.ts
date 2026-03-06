@@ -463,8 +463,9 @@ export interface AIProvider {
   company_id: string;
   provider_name: 'gemini' | 'openai' | 'claude' | 'openrouter' | 'local';
   api_key?: string;
-  model_name: string;
+  model: string;
   base_url?: string;
+  is_default: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -479,13 +480,17 @@ export interface AIPart {
 }
 
 export interface AIRequest {
+  task_type?: string;
   prompt?: string;
   parts?: AIPart[];
+  context?: any;
   system_prompt?: string;
   temperature?: number;
   max_tokens?: number;
   response_mime_type?: string;
   response_schema?: any;
+  company_id?: string;
+  outlet_id?: string;
 }
 
 export interface AIResponse {
