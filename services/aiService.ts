@@ -1,6 +1,6 @@
 
 import { getSupabase, authService } from './supabaseService';
-import { GoogleGenAI, Type } from "@google/genai";
+import { universalAIService } from './UniversalAIService';
 import { AIInsight, AIRecommendation, UserRole } from '../types';
 import { notificationService } from './notificationService';
 
@@ -133,48 +133,46 @@ export const aiService = {
       return { id: item.id, name: item.name, price: item.base_price, qty_30d: totalQty, margin };
     });
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: `Strategic analysis for outlet: ${outletId}. Data: ${JSON.stringify(itemPerformance.filter(i => i.qty_30d > 0))}`,
-      config: {
-        systemInstruction: `You are a professional restaurant engineer in LEGAL-DEFENSE and EXPLAINABLE mode.
+    const response = await universalAIService.generateContent({
+      prompt: `Strategic analysis for outlet: ${outletId}. Data: ${JSON.stringify(itemPerformance.filter(i => i.qty_30d > 0))}`,
+      system_prompt: `You are a professional restaurant engineer in LEGAL-DEFENSE and EXPLAINABLE mode.
           1. Mandatory explainability object for every recommendation.
           2. Mandatory disclaimer header.
           3. Cite exact data points evaluated.
           4. State thresholds crossed (e.g., Margin < 30%).
           Return JSON array of AIRecommendation including explanation_object.`,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              type: { type: Type.STRING },
-              title: { type: Type.STRING },
-              description: { type: Type.STRING },
-              rationale: { type: Type.STRING },
-              expected_impact: { type: Type.STRING },
-              confidence_score: { type: Type.NUMBER },
-              risk_assessment: { type: Type.STRING },
-              explanation_object: {
-                type: Type.OBJECT,
-                properties: {
-                  trigger_condition: { type: Type.STRING },
-                  data_points_evaluated: { type: Type.NUMBER },
-                  rules_applied: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  thresholds_crossed: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  comparisons_used: { type: Type.STRING },
-                  confidence_score: { type: Type.NUMBER }
-                },
-                required: ['trigger_condition', 'rules_applied']
-              }
-            },
-            required: ['type', 'title', 'description', 'rationale', 'expected_impact', 'confidence_score', 'explanation_object']
-          }
+      response_mime_type: "application/json",
+      response_schema: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            type: { type: "STRING" },
+            title: { type: "STRING" },
+            description: { type: "STRING" },
+            rationale: { type: "STRING" },
+            expected_impact: { type: "STRING" },
+            confidence_score: { type: "NUMBER" },
+            risk_assessment: { type: "STRING" },
+            explanation_object: {
+              type: "OBJECT",
+              properties: {
+                trigger_condition: { type: "STRING" },
+                data_points_evaluated: { type: "NUMBER" },
+                rules_applied: { type: "ARRAY", items: { type: "STRING" } },
+                thresholds_crossed: { type: "ARRAY", items: { type: "STRING" } },
+                comparisons_used: { type: "STRING" },
+                confidence_score: { type: "NUMBER" }
+              },
+              required: ['trigger_condition', 'rules_applied']
+            }
+          },
+          required: ['type', 'title', 'description', 'rationale', 'expected_impact', 'confidence_score', 'explanation_object']
         }
       }
     });
+
+    if (response.error) throw new Error(response.error);
 
     const finalRecs = JSON.parse(response.text || '[]').map((raw: any) => ({
       ...raw,
@@ -254,47 +252,45 @@ export const aiService = {
 
     if (breaches.length === 0) return [];
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: `Interpret operational breaches: ${JSON.stringify(breaches)}`,
-      config: {
-        systemInstruction: `You are a Forensic AI Control Plane in LEGAL-DEFENSE and EXPLAINABLE mode. 
+    const response = await universalAIService.generateContent({
+      prompt: `Interpret operational breaches: ${JSON.stringify(breaches)}`,
+      system_prompt: `You are a Forensic AI Control Plane in LEGAL-DEFENSE and EXPLAINABLE mode. 
           1. Every insight MUST include an explanation_object.
           2. Never claim absolute correctness.
           3. Mandatory disclaimer.
           Return JSON array of AIInsight including explanation_object.`,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              category: { type: Type.STRING },
-              severity: { type: Type.STRING },
-              title: { type: Type.STRING },
-              summary: { type: Type.STRING },
-              explanation: { type: Type.STRING },
-              recommended_action: { type: Type.STRING },
-              confidence_score: { type: Type.NUMBER },
-              explanation_object: {
-                type: Type.OBJECT,
-                properties: {
-                  trigger_condition: { type: Type.STRING },
-                  data_points_evaluated: { type: Type.NUMBER },
-                  rules_applied: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  thresholds_crossed: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  comparisons_used: { type: Type.STRING },
-                  confidence_score: { type: Type.NUMBER }
-                },
-                required: ['trigger_condition', 'rules_applied']
-              }
-            },
-            required: ['title', 'summary', 'explanation', 'recommended_action', 'confidence_score', 'explanation_object']
-          }
+      response_mime_type: "application/json",
+      response_schema: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            category: { type: "STRING" },
+            severity: { type: "STRING" },
+            title: { type: "STRING" },
+            summary: { type: "STRING" },
+            explanation: { type: "STRING" },
+            recommended_action: { type: "STRING" },
+            confidence_score: { type: "NUMBER" },
+            explanation_object: {
+              type: "OBJECT",
+              properties: {
+                trigger_condition: { type: "STRING" },
+                data_points_evaluated: { type: "NUMBER" },
+                rules_applied: { type: "ARRAY", items: { type: "STRING" } },
+                thresholds_crossed: { type: "ARRAY", items: { type: "STRING" } },
+                comparisons_used: { type: "STRING" },
+                confidence_score: { type: "NUMBER" }
+              },
+              required: ['trigger_condition', 'rules_applied']
+            }
+          },
+          required: ['title', 'summary', 'explanation', 'recommended_action', 'confidence_score', 'explanation_object']
         }
       }
     });
+
+    if (response.error) throw new Error(response.error);
 
     const finalInsights: AIInsight[] = JSON.parse(response.text || '[]').map((raw: any, idx: number) => ({
        id: `AI-${Date.now()}-${idx}`,

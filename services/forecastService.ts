@@ -1,6 +1,6 @@
 
 import { getSupabase, authService } from './supabaseService';
-import { GoogleGenAI, Type } from "@google/genai";
+import { universalAIService } from './UniversalAIService';
 import { AIForecast } from '../types';
 import { aiService } from './aiService';
 
@@ -47,45 +47,43 @@ export const forecastService = {
 
     const baselineRevenue = Object.values(dailySeries).slice(-30).reduce((acc, d) => acc + d.rev, 0);
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: `Demand Forecast: ${horizon}. Data: ${JSON.stringify(dailySeries)}`,
-      config: {
-        systemInstruction: `You are a restaurant data scientist in LEGAL-DEFENSE and EXPLAINABLE mode. 
+    const response = await universalAIService.generateContent({
+      prompt: `Demand Forecast: ${horizon}. Data: ${JSON.stringify(dailySeries)}`,
+      system_prompt: `You are a restaurant data scientist in LEGAL-DEFENSE and EXPLAINABLE mode. 
           1. Every forecast MUST include an explanation_object.
           2. Cite specific historical baselines used. 
           3. State advisory nature explicitly.
           Return JSON matching AIForecast schema including explanation_object.`,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            predicted_revenue_min: { type: Type.NUMBER },
-            predicted_revenue_max: { type: Type.NUMBER },
-            predicted_orders: { type: Type.NUMBER },
-            peak_days: { type: Type.ARRAY, items: { type: Type.STRING } },
-            slow_days: { type: Type.ARRAY, items: { type: Type.STRING } },
-            confidence_score: { type: Type.NUMBER },
-            assumptions: { type: Type.STRING },
-            error_margin_percent: { type: Type.NUMBER },
-            explanation_object: {
-              type: Type.OBJECT,
-              properties: {
-                trigger_condition: { type: Type.STRING },
-                data_points_evaluated: { type: Type.NUMBER },
-                rules_applied: { type: Type.ARRAY, items: { type: Type.STRING } },
-                thresholds_crossed: { type: Type.ARRAY, items: { type: Type.STRING } },
-                comparisons_used: { type: Type.STRING },
-                confidence_score: { type: Type.NUMBER }
-              },
-              required: ['trigger_condition', 'rules_applied']
-            }
-          },
-          required: ['predicted_revenue_min', 'predicted_revenue_max', 'predicted_orders', 'confidence_score', 'error_margin_percent', 'explanation_object']
-        }
+      response_mime_type: "application/json",
+      response_schema: {
+        type: "OBJECT",
+        properties: {
+          predicted_revenue_min: { type: "NUMBER" },
+          predicted_revenue_max: { type: "NUMBER" },
+          predicted_orders: { type: "NUMBER" },
+          peak_days: { type: "ARRAY", items: { type: "STRING" } },
+          slow_days: { type: "ARRAY", items: { type: "STRING" } },
+          confidence_score: { type: "NUMBER" },
+          assumptions: { type: "STRING" },
+          error_margin_percent: { type: "NUMBER" },
+          explanation_object: {
+            type: "OBJECT",
+            properties: {
+              trigger_condition: { type: "STRING" },
+              data_points_evaluated: { type: "NUMBER" },
+              rules_applied: { type: "ARRAY", items: { type: "STRING" } },
+              thresholds_crossed: { type: "ARRAY", items: { type: "STRING" } },
+              comparisons_used: { type: "STRING" },
+              confidence_score: { type: "NUMBER" }
+            },
+            required: ['trigger_condition', 'rules_applied']
+          }
+        },
+        required: ['predicted_revenue_min', 'predicted_revenue_max', 'predicted_orders', 'confidence_score', 'error_margin_percent', 'explanation_object']
       }
     });
+
+    if (response.error) throw new Error(response.error);
 
     const prediction = JSON.parse(response.text || '{}');
     const forecast: Partial<AIForecast> = {

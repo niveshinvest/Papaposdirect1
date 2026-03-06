@@ -1,6 +1,6 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
 import { getSupabase, authService, tenantContext } from './supabaseService';
+import { universalAIService } from './UniversalAIService';
 
 export const ocrService = {
   async processInvoice(file: File): Promise<string> {
@@ -13,7 +13,6 @@ export const ocrService = {
       reader.onload = async (evt) => {
         try {
           const base64 = (evt.target?.result as string).split(',')[1];
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
           
           // Fetch existing inventory for matching context
           const { data: inventoryItems } = await client
@@ -32,12 +31,10 @@ export const ocrService = {
             aliases: (aliases || []).filter(a => a.inventory_id === item.id).map(a => a.alias_name)
           }));
 
-          const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: {
-              parts: [
-                { inlineData: { data: base64, mimeType: file.type } },
-                { text: `Extract all procurement data from this invoice. 
+          const response = await universalAIService.generateContent({
+            parts: [
+              { inline_data: { data: base64, mime_type: file.type } },
+              { text: `Extract all procurement data from this invoice. 
                   
                   CONTEXT: Existing Inventory Items in PapaPOS:
                   ${JSON.stringify(inventoryContext)}
@@ -61,41 +58,40 @@ export const ocrService = {
                   Provide a confidence score between 0 and 1 for the extraction.
                   Return ONLY JSON.` 
                 }
-              ]
-            },
-            config: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  vendor_name: { type: Type.STRING },
-                  vendor_gstin: { type: Type.STRING },
-                  invoice_number: { type: Type.STRING },
-                  invoice_date: { type: Type.STRING },
-                  recipient_gstin: { type: Type.STRING },
-                  total_amount: { type: Type.NUMBER },
-                  confidence: { type: Type.NUMBER },
+            ],
+            response_mime_type: "application/json",
+            response_schema: {
+              type: "OBJECT",
+              properties: {
+                vendor_name: { type: "STRING" },
+                vendor_gstin: { type: "STRING" },
+                invoice_number: { type: "STRING" },
+                invoice_date: { type: "STRING" },
+                recipient_gstin: { type: "STRING" },
+                total_amount: { type: "NUMBER" },
+                confidence: { type: "NUMBER" },
+                items: {
+                  type: "ARRAY",
                   items: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        name: { type: Type.STRING, description: "AI Extracted Name from Invoice" },
-                        matched_inventory_id: { type: Type.STRING, nullable: true, description: "ID from CONTEXT if matched" },
-                        suggested_inventory_name: { type: Type.STRING, nullable: true, description: "Closest match name from CONTEXT or new name suggestion" },
-                        qty: { type: Type.NUMBER },
-                        unit: { type: Type.STRING },
-                        price: { type: Type.NUMBER },
-                        hsn: { type: Type.STRING }
-                      },
-                      required: ['name', 'qty', 'price']
-                    }
+                    type: "OBJECT",
+                    properties: {
+                      name: { type: "STRING" },
+                      matched_inventory_id: { type: "STRING" },
+                      suggested_inventory_name: { type: "STRING" },
+                      qty: { type: "NUMBER" },
+                      unit: { type: "STRING" },
+                      price: { type: "NUMBER" },
+                      hsn: { type: "STRING" }
+                    },
+                    required: ['name', 'qty', 'price']
                   }
-                },
-                required: ['vendor_name', 'invoice_date', 'total_amount', 'items']
-              }
+                }
+              },
+              required: ['vendor_name', 'invoice_date', 'total_amount', 'items']
             }
           });
+
+          if (response.error) throw new Error(response.error);
 
           const extracted = JSON.parse(response.text || '{}');
           

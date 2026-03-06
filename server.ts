@@ -2,11 +2,70 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import { createClient } from '@supabase/supabase-js';
 
+import { GeminiAdapter, OpenAIAdapter, ClaudeAdapter, OpenRouterAdapter } from "./services/aiAdapters";
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+
+  // AI Adapters Registry
+  const adapters: Record<string, any> = {
+    gemini: new GeminiAdapter(),
+    openai: new OpenAIAdapter(),
+    claude: new ClaudeAdapter(),
+    openrouter: new OpenRouterAdapter()
+  };
+
+  // 0. AI Generation Endpoint
+  app.post("/api/ai/generate", async (req, res) => {
+    const { prompt, parts, system_prompt, temperature, max_tokens, response_mime_type, response_schema, company_id } = req.body;
+
+    if (!company_id) return res.status(400).json({ error: "company_id required" });
+
+    try {
+      const supabase = createClient(
+        process.env.VITE_SUPABASE_URL!,
+        process.env.VITE_SUPABASE_ANON_KEY!
+      );
+
+      // 1. Fetch Active Provider
+      const { data: provider, error: pErr } = await supabase
+        .from('ai_providers')
+        .select('*')
+        .eq('company_id', company_id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (pErr) throw pErr;
+      
+      // Default to Gemini if no provider configured
+      const activeProvider = provider || {
+        provider_name: 'gemini',
+        model_name: 'gemini-pro',
+        api_key: process.env.GEMINI_API_KEY || process.env.API_KEY
+      };
+
+      const adapter = adapters[activeProvider.provider_name];
+      if (!adapter) throw new Error(`Unsupported provider: ${activeProvider.provider_name}`);
+
+      const result = await adapter.generateContent({
+        prompt,
+        parts,
+        system_prompt,
+        temperature,
+        max_tokens,
+        response_mime_type,
+        response_schema
+      }, activeProvider);
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("AI Route Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   // 1. WhatsApp Webhook (Verification)
   app.get("/api/whatsapp/webhook", (req, res) => {

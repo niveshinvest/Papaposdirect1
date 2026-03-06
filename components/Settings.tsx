@@ -8,7 +8,7 @@ import {
   Printer as PrinterIcon, Network, Bluetooth, Usb, Edit2, X, Search, Cpu, Activity, Clock, ArrowUpCircle, Layers, MoveRight, LogOut, ShieldCheck, Wifi, Cable,
   ChevronRight, Bell, Mail, MessageSquare, BrainCircuit, ShieldAlert, Wallet, ListFilter
 } from 'lucide-react';
-import { Organization, PrinterConfig, Outlet, NotificationPrefs, PaymentMode, PaymentModeType } from '../types';
+import { Organization, PrinterConfig, Outlet, NotificationPrefs, PaymentMode, PaymentModeType, AIProvider } from '../types';
 import { db } from '../services/db';
 import { printerService, Printer, DiscoveredDevice } from '../services/printerService';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -41,8 +41,17 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testError, setTestError] = useState('');
 
-  // AI Kill-Switch State
+  // AI States
   const [isKillSwitchOn, setIsKillSwitchOn] = useState(org?.ai_kill_switch || false);
+  const [aiProviders, setAiProviders] = useState<AIProvider[]>([]);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+  const [aiForm, setAiForm] = useState<Partial<AIProvider>>({
+    provider_name: 'gemini',
+    model_name: '',
+    api_key: '',
+    base_url: '',
+    is_active: false
+  });
 
   // Migration States
   const [migrationStatus, setMigrationStatus] = useState<MigrationStatus | null>(null);
@@ -93,6 +102,7 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
     }
     if (activeTab === 'ai' && org) {
       setIsKillSwitchOn(org.ai_kill_switch || false);
+      loadAIProviders();
     }
   }, [activeOutlet, activeTab, syncConfig, org]);
 
@@ -139,6 +149,68 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
       setMopForm({ name: '', type: 'CASH', is_default: false, is_active: true });
     } catch (err: any) {
       alert(`Payment configuration failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadAIProviders = async () => {
+    if (!org) return;
+    setLoading(true);
+    try {
+      const { data, error } = await getSupabase()
+        .from('ai_providers')
+        .select('*')
+        .eq('company_id', org.id)
+        .order('created_at');
+      if (!error) setAiProviders(data || []);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveAIProvider = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!org) return;
+    setLoading(true);
+    try {
+      const client = getSupabase();
+      const { error } = await client
+        .from('ai_providers')
+        .upsert({
+          ...aiForm,
+          company_id: org.id,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+      await loadAIProviders();
+      setIsAIModalOpen(false);
+      setAiForm({ provider_name: 'gemini', model_name: '', api_key: '', base_url: '', is_active: false });
+    } catch (err: any) {
+      alert(`AI configuration failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleAIProvider = async (provider: AIProvider) => {
+    if (!org) return;
+    setLoading(true);
+    try {
+      const client = getSupabase();
+      
+      // The trigger handles ensuring only one is active, 
+      // but we'll be explicit for UI responsiveness
+      const { error } = await client
+        .from('ai_providers')
+        .update({ is_active: !provider.is_active })
+        .eq('id', provider.id);
+
+      if (error) throw error;
+      await loadAIProviders();
+    } catch (err: any) {
+      alert(`Toggle failed: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -397,14 +469,25 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
   const renderAIControl = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
        <div className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm space-y-10">
-          <div className="flex items-center gap-6">
-             <div className={`p-5 rounded-[28px] shadow-sm ${isKillSwitchOn ? 'bg-rose-50 text-rose-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                <BrainCircuit size={32} />
-             </div>
-             <div>
-                <h3 className="text-2xl font-black text-slate-900 tracking-tight">AI Control Plane</h3>
-                <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">System-wide Governance & Fail-safes</p>
-             </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-6">
+               <div className={`p-5 rounded-[28px] shadow-sm ${isKillSwitchOn ? 'bg-rose-50 text-rose-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                  <BrainCircuit size={32} />
+               </div>
+               <div>
+                  <h3 className="text-2xl font-black text-slate-900 tracking-tight">AI Control Plane</h3>
+                  <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">System-wide Governance & Fail-safes</p>
+               </div>
+            </div>
+            <button 
+              onClick={() => {
+                setAiForm({ provider_name: 'gemini', model_name: '', api_key: '', base_url: '', is_active: false });
+                setIsAIModalOpen(true);
+              }}
+              className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg"
+            >
+              <Plus size={18} /> Add Provider
+            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
@@ -430,6 +513,48 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
                      When ON, all AI processing (Insights, Forecasts, Recommendations) will be completely bypassed. This is an immutable safety override.
                    </p>
                 </div>
+             </div>
+
+             <div className="space-y-4">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Configured Providers</h4>
+                {aiProviders.length === 0 ? (
+                  <div className="p-8 text-center border-2 border-dashed rounded-3xl text-slate-300">
+                    <p className="text-xs font-bold uppercase">No providers configured</p>
+                  </div>
+                ) : (
+                  aiProviders.map(provider => (
+                    <div key={provider.id} className={`p-6 rounded-3xl border-2 transition-all ${provider.is_active ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}>
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-4">
+                          <div className={`p-3 rounded-2xl ${provider.is_active ? 'bg-white' : 'bg-slate-50'}`}>
+                            <Cpu size={20} className={provider.is_active ? 'text-emerald-600' : 'text-slate-400'} />
+                          </div>
+                          <div>
+                            <p className="font-black text-slate-800 text-sm capitalize">{provider.provider_name}</p>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{provider.model_name || 'Default Model'}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button 
+                            onClick={() => {
+                              setAiForm(provider);
+                              setIsAIModalOpen(true);
+                            }}
+                            className="p-2 text-slate-400 hover:text-indigo-600"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleToggleAIProvider(provider)}
+                            className={`w-12 h-6 rounded-full transition-all relative ${provider.is_active ? 'bg-emerald-600' : 'bg-slate-300'}`}
+                          >
+                            <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${provider.is_active ? 'right-0.5' : 'left-0.5'}`}></div>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
              </div>
           </div>
        </div>
@@ -589,6 +714,82 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
            </div>
         )}
       </div>
+
+      {/* AI Provider Modal */}
+      {isAIModalOpen && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
+           <div className="bg-white rounded-[56px] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+              <div className="p-10 bg-slate-900 text-white flex justify-between items-center">
+                 <h3 className="text-2xl font-black tracking-tight uppercase">AI Provider</h3>
+                 <button onClick={() => setIsAIModalOpen(false)} className="p-3 hover:bg-white/10 rounded-full transition-all"><X size={28} /></button>
+              </div>
+              <form onSubmit={handleSaveAIProvider} className="p-10 space-y-6">
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Service Provider</label>
+                    <select 
+                      className="w-full px-6 py-4 bg-slate-50 rounded-2xl font-bold outline-none"
+                      value={aiForm.provider_name}
+                      onChange={e => setAiForm({...aiForm, provider_name: e.target.value as any})}
+                    >
+                       <option value="gemini">Google Gemini</option>
+                       <option value="openai">OpenAI ChatGPT</option>
+                       <option value="claude">Anthropic Claude</option>
+                       <option value="openrouter">OpenRouter</option>
+                    </select>
+                 </div>
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Model Name</label>
+                    <input 
+                      className="w-full px-6 py-4 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-indigo-500" 
+                      placeholder="e.g. gemini-3-pro-preview / gpt-4o" 
+                      value={aiForm.model_name}
+                      onChange={e => setAiForm({...aiForm, model_name: e.target.value})}
+                    />
+                 </div>
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">API Key</label>
+                    <input 
+                      type="password"
+                      required={!aiForm.id}
+                      className="w-full px-6 py-4 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-indigo-500" 
+                      placeholder="••••••••••••••••" 
+                      value={aiForm.api_key}
+                      onChange={e => setAiForm({...aiForm, api_key: e.target.value})}
+                    />
+                    <p className="text-[9px] text-slate-400 font-medium italic">Keys are stored securely and never exposed to the client.</p>
+                 </div>
+                 {aiForm.provider_name === 'openrouter' && (
+                   <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base URL (Optional)</label>
+                      <input 
+                        className="w-full px-6 py-4 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-indigo-500" 
+                        placeholder="https://openrouter.ai/api/v1" 
+                        value={aiForm.base_url}
+                        onChange={e => setAiForm({...aiForm, base_url: e.target.value})}
+                      />
+                   </div>
+                 )}
+                 <div className="flex items-center justify-between p-6 bg-emerald-50 rounded-3xl border border-emerald-100">
+                    <div>
+                       <p className="font-black text-emerald-900 text-sm">Active Provider</p>
+                       <p className="text-[10px] text-emerald-600 font-bold uppercase">Use this for all AI features</p>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setAiForm({...aiForm, is_active: !aiForm.is_active})}
+                      className={`w-14 h-7 rounded-full transition-all relative ${aiForm.is_active ? 'bg-emerald-600' : 'bg-slate-300'}`}
+                    >
+                       <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-md transition-all ${aiForm.is_active ? 'right-1' : 'left-1'}`}></div>
+                    </button>
+                 </div>
+                 <button type="submit" disabled={loading} className="w-full py-6 bg-slate-900 text-white rounded-[28px] font-black uppercase tracking-widest text-sm shadow-xl flex items-center justify-center gap-2">
+                    {loading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />} 
+                    Save Configuration
+                 </button>
+              </form>
+           </div>
+        </div>
+      )}
 
       {/* Printer Registry Modal */}
       {isRegistryModalOpen && (

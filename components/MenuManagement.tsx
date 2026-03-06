@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { menuService, authService, getSupabase } from '../services/supabaseService';
-import { GoogleGenAI } from "@google/genai";
+import { universalAIService } from '../services/UniversalAIService';
 import { Modifier } from '../types';
 
 interface MenuManagementProps {
@@ -71,10 +71,8 @@ const MenuManagement: React.FC<MenuManagementProps> = ({ activeOutlet }) => {
     if (!itemFormData.name) return alert("Enter a dish name first.");
     setIsGeneratingAi(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Create a short, appetizing, 15-word menu description for the dish: "${itemFormData.name}". Focus on texture and flavor.`,
+      const response = await universalAIService.generateContent({
+        prompt: `Create a short, appetizing, 15-word menu description for the dish: "${itemFormData.name}". Focus on texture and flavor.`,
       });
       setItemFormData(prev => ({ ...prev, description: response.text || prev.description }));
     } catch (e) {

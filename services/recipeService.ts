@@ -1,6 +1,6 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
 import { getSupabase, authService } from "./supabaseService";
+import { universalAIService } from "./UniversalAIService";
 
 export type RecipeStatus = 'DRAFT' | 'QUEUED' | 'FINALIZED' | 'REJECTED';
 export type RecipeSource = 'AI' | 'MANUAL';
@@ -55,39 +55,37 @@ export const recipeService = {
     console.log("RECIPE_SERVICE: BEFORE_AI_CALL", { itemName, prompt });
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview",
-        contents: prompt,
-        config: {
-          systemInstruction: "You are a professional chef. Provide ingredients for a single portion of this dish. Use standard commercial units (kg, gram, litre, ml, unit). Also provide cooking steps. Calculate a rough total cost assuming standard market rates.",
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              ingredients: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    quantity: { type: Type.NUMBER },
-                    unit: { type: Type.STRING },
-                    cost: { type: Type.NUMBER }
-                  },
-                  required: ['name', 'quantity', 'unit']
-                }
-              },
-              steps: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              },
-              total_cost: { type: Type.NUMBER }
+      const response = await universalAIService.generateContent({
+        prompt,
+        system_prompt: "You are a professional chef. Provide ingredients for a single portion of this dish. Use standard commercial units (kg, gram, litre, ml, unit). Also provide cooking steps. Calculate a rough total cost assuming standard market rates.",
+        response_mime_type: "application/json",
+        response_schema: {
+          type: "OBJECT",
+          properties: {
+            ingredients: {
+              type: "ARRAY",
+              items: {
+                type: "OBJECT",
+                properties: {
+                  name: { type: "STRING" },
+                  quantity: { type: "NUMBER" },
+                  unit: { type: "STRING" },
+                  cost: { type: "NUMBER" }
+                },
+                required: ['name', 'quantity', 'unit']
+              }
             },
-            required: ['ingredients', 'steps', 'total_cost']
-          }
+            steps: {
+              type: "ARRAY",
+              items: { type: "STRING" }
+            },
+            total_cost: { type: "NUMBER" }
+          },
+          required: ['ingredients', 'steps', 'total_cost']
         }
       });
+
+      if (response.error) throw new Error(response.error);
 
       const recipeJson = JSON.parse(response.text || '{}');
       console.log("RECIPE_SERVICE: AFTER_AI_RESPONSE", recipeJson);

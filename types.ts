@@ -458,6 +458,42 @@ export interface StaffUser {
   token_expires_at?: string;
 }
 
+export interface AIProvider {
+  id: string;
+  company_id: string;
+  provider_name: 'gemini' | 'openai' | 'claude' | 'openrouter' | 'local';
+  api_key?: string;
+  model_name: string;
+  base_url?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AIPart {
+  text?: string;
+  inline_data?: {
+    mime_type: string;
+    data: string;
+  };
+}
+
+export interface AIRequest {
+  prompt?: string;
+  parts?: AIPart[];
+  system_prompt?: string;
+  temperature?: number;
+  max_tokens?: number;
+  response_mime_type?: string;
+  response_schema?: any;
+}
+
+export interface AIResponse {
+  text: string;
+  raw?: any;
+  error?: string;
+}
+
 export interface AuditLog {
   id: string;
   action: string;
