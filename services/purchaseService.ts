@@ -183,5 +183,48 @@ export const purchaseService = {
       const { error: ocrErr } = await client.from('ocr_invoice_results').update({ status: 'PROCESSED' }).eq('id', ocrId);
       if (ocrErr) throw new Error(`OCR Status Error: ${ocrErr.message}`);
     }
+  },
+
+  async fetchProcurementOrderById(id: string) {
+    const client = getSupabase();
+    if (!client) return null;
+    const { data, error } = await client
+      .from('procurement_orders')
+      .select('*, suppliers(name), purchase_items(*)')
+      .eq('id', id)
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async updateProcurementOrder(id: string, updates: any, items: any[]) {
+    const client = getSupabase();
+    if (!client) throw new Error("Database connection required");
+    const { company_id } = await tenantContext.require();
+
+    // 1. Update Order
+    const { error: poErr } = await client
+      .from('procurement_orders')
+      .update(updates)
+      .eq('id', id);
+    if (poErr) throw new Error(poErr.message);
+
+    // 2. Update Items (Delete and Re-insert for simplicity in this context)
+    const { error: delErr } = await client
+      .from('purchase_items')
+      .delete()
+      .eq('purchase_order_id', id);
+    if (delErr) throw new Error(delErr.message);
+
+    const newItems = items.map(item => ({
+      ...item,
+      purchase_order_id: id,
+      company_id
+    }));
+
+    const { error: itemsErr } = await client.from('purchase_items').insert(newItems);
+    if (itemsErr) throw new Error(itemsErr.message);
+
+    return { success: true };
   }
 };

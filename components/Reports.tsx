@@ -11,11 +11,15 @@ import {
   Calendar, Download, Loader2, Filter, FileText, Search
 } from 'lucide-react';
 import { analyticsService } from '../services/analyticsService';
+import { salesService } from '../services/salesService';
 import * as XLSX from 'xlsx';
+import { Edit3, X as CloseIcon, Plus, Trash2, Save } from 'lucide-react';
 
 const Reports: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletId }) => {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingInvoice, setEditingInvoice] = useState<any>(null);
+  const [editReason, setEditReason] = useState('');
   const [dateRange, setDateRange] = useState({ 
     start: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
@@ -47,6 +51,57 @@ const Reports: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletId 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Sales Report");
     XLSX.writeFile(wb, `Sales_Report_${dateRange.start}_to_${dateRange.end}.xlsx`);
+  };
+
+  const startEdit = async (invoiceId: string) => {
+    setLoading(true);
+    try {
+      const inv = await salesService.getInvoiceWithItems(invoiceId);
+      setEditingInvoice(inv);
+    } catch (e) {
+      alert("Failed to load invoice details");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editReason) return alert("Please provide a reason for editing");
+    setLoading(true);
+    try {
+      await salesService.editInvoice({
+        invoiceId: editingInvoice.id,
+        newSubtotal: editingInvoice.subtotal,
+        newTotalTax: editingInvoice.total_tax,
+        newGrandTotal: editingInvoice.grand_total,
+        newItems: editingInvoice.invoice_items,
+        editReason
+      });
+      setEditingInvoice(null);
+      setEditReason('');
+      await loadReport();
+    } catch (e: any) {
+      alert(`Failed to save: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateItem = (idx: number, updates: any) => {
+    const newItems = [...editingInvoice.invoice_items];
+    newItems[idx] = { ...newItems[idx], ...updates };
+    
+    // Recalculate totals
+    const subtotal = newItems.reduce((acc, it) => acc + Number(it.total_amount), 0);
+    const totalTax = newItems.reduce((acc, it) => acc + Number(it.tax_amount), 0);
+    
+    setEditingInvoice({
+      ...editingInvoice,
+      invoice_items: newItems,
+      subtotal,
+      total_tax: totalTax,
+      grand_total: subtotal // Assuming subtotal is already inclusive or exclusive based on previous logic
+    });
   };
 
   const stats = useMemo(() => {
@@ -111,6 +166,7 @@ const Reports: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletId 
                        <th className="px-8 py-5 text-right">Tax</th>
                        <th className="px-8 py-5 text-right">Total Amount</th>
                         <th className="px-8 py-5 text-right">Grand Total</th>
+                        <th className="px-8 py-5 text-right">Actions</th>
 
                     </tr>
                  </thead>
@@ -124,11 +180,93 @@ const Reports: React.FC<{ activeOutletId?: string | null }> = ({ activeOutletId 
                          </td>
                          <td className="px-8 py-6 text-right font-bold text-emerald-600">₹{Number(inv.total_tax).toFixed(2)}</td>
                          <td className="px-8 py-6 text-right font-black text-slate-900">₹{Number(inv.subtotal).toLocaleString()}</td>
-                         <td className="px-8 py-6 text-right font-black text-slate-900">₹{Number(inv.subtotal).toLocaleString()}</td>
+                         <td className="px-8 py-6 text-right">
+                            <button 
+                              onClick={() => startEdit(inv.id)}
+                              className="p-2 text-slate-300 hover:text-indigo-600 transition-all"
+                            >
+                              <Edit3 size={16} />
+                            </button>
+                         </td>
                       </tr>
                     ))}
                  </tbody>
               </table>
+           </div>
+        </div>
+      )}
+
+      {editingInvoice && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+           <div className="bg-white rounded-[48px] shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
+              <div className="p-8 border-b flex justify-between items-center bg-slate-50/50">
+                 <div className="flex items-center gap-4">
+                    <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg"><Edit3 size={20} /></div>
+                    <div>
+                       <h3 className="text-xl font-black text-slate-900">Edit Invoice #{editingInvoice.invoice_number}</h3>
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Audit Trail Enabled</p>
+                    </div>
+                 </div>
+                 <button onClick={() => setEditingInvoice(null)} className="p-2 bg-white border rounded-full text-slate-400 hover:text-slate-900 transition-all"><CloseIcon size={20} /></button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-10 space-y-8">
+                 <div className="space-y-4">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Line Items</h4>
+                    <div className="space-y-3">
+                       {editingInvoice.invoice_items.map((item: any, idx: number) => (
+                         <div key={idx} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 group">
+                            <div className="flex-1">
+                               <p className="font-black text-slate-900">{item.item_name}</p>
+                               <p className="text-[9px] font-black text-slate-400 uppercase">Rate: ₹{item.unit_price}</p>
+                            </div>
+                            <div className="flex items-center gap-6">
+                               <div className="text-right w-20">
+                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Qty</p>
+                                  <input 
+                                    type="number"
+                                    className="w-full bg-transparent border-none font-black text-slate-900 text-right focus:ring-0 p-0"
+                                    value={item.quantity}
+                                    onChange={e => updateItem(idx, { quantity: Number(e.target.value), total_amount: Number(e.target.value) * item.unit_price })}
+                                  />
+                               </div>
+                               <div className="text-right w-24">
+                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Total</p>
+                                  <p className="font-black text-indigo-600">₹{item.total_amount.toFixed(2)}</p>
+                               </div>
+                            </div>
+                         </div>
+                       ))}
+                    </div>
+                 </div>
+
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Reason for Edit (Required for Audit)</label>
+                    <textarea 
+                      className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 min-h-[100px]"
+                      placeholder="e.g., Incorrect quantity entered by staff, Discount applied post-billing..."
+                      value={editReason}
+                      onChange={e => setEditReason(e.target.value)}
+                    />
+                 </div>
+              </div>
+
+              <div className="p-8 border-t bg-slate-50/50 flex justify-between items-center">
+                 <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">New Adjusted Total</p>
+                    <h3 className="text-3xl font-black text-slate-900 tracking-tighter">₹{editingInvoice.grand_total.toLocaleString()}</h3>
+                 </div>
+                 <div className="flex gap-3">
+                    <button onClick={() => setEditingInvoice(null)} className="px-8 py-4 bg-white border border-slate-200 text-slate-400 rounded-2xl font-black uppercase text-xs tracking-widest">Cancel</button>
+                    <button 
+                      onClick={handleSaveEdit}
+                      disabled={loading || !editReason}
+                      className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:hover:scale-100"
+                    >
+                       {loading ? <Loader2 className="animate-spin" size={18} /> : <div className="flex items-center gap-2"><Save size={18} /> Save Changes</div>}
+                    </button>
+                 </div>
+              </div>
            </div>
         </div>
       )}

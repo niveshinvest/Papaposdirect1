@@ -79,16 +79,58 @@ const PurchaseOrders: React.FC<PurchaseOrdersProps> = ({ activeOutlet }) => {
     if (!selectedOcr || !activeOutlet) return;
     setLoading(true);
     try {
-      await purchaseService.commitOcrResult(selectedOcr.id, selectedOcr.extracted_data, activeOutlet.id);
+      if (selectedOcr.is_existing) {
+        // Update existing order
+        await purchaseService.updateProcurementOrder(
+          selectedOcr.id, 
+          {
+            order_date: selectedOcr.extracted_data.invoice_date,
+            total_amount: selectedOcr.extracted_data.total_amount,
+            status: selectedOcr.extracted_data.status || 'RECEIVED'
+          },
+          selectedOcr.extracted_data.items.map((it: any) => ({
+            item_name: it.name,
+            qty: it.qty,
+            unit: it.unit,
+            unit_price: it.price,
+            total_amount: it.qty * it.price
+          }))
+        );
+      } else {
+        // Create new from OCR
+        await purchaseService.commitOcrResult(selectedOcr.id, selectedOcr.extracted_data, activeOutlet.id);
+      }
       await loadData();
       setSelectedOcr(null);
       setView('LIST');
     } catch (err: any) {
       console.error(err);
-      alert(`Failed to commit procurement data: ${err.message || 'Unknown error'}`);
+      alert(`Failed to save procurement data: ${err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEditOrder = (order: any) => {
+    setSelectedOcr({
+      id: order.id,
+      is_existing: true,
+      extracted_data: {
+        vendor_name: order.suppliers?.name || 'Unknown',
+        invoice_date: order.order_date,
+        vendor_gstin: '', // Not stored in procurement_orders directly
+        invoice_number: order.id.slice(0, 8),
+        total_amount: order.total_amount,
+        status: order.status,
+        items: (order.purchase_items || []).map((it: any) => ({
+          name: it.item_name,
+          qty: it.qty,
+          unit: it.unit,
+          price: it.unit_price
+        }))
+      }
+    });
+    setView('REVIEW');
   };
 
   const handleDeleteItem = (index: number) => {
@@ -208,7 +250,12 @@ const PurchaseOrders: React.FC<PurchaseOrdersProps> = ({ activeOutlet }) => {
                             <p className="font-black text-slate-900">₹{order.total_amount.toLocaleString()}</p>
                          </td>
                          <td className="px-8 py-6 text-right">
-                            <button className="p-2 text-slate-300 hover:text-slate-900 transition-all"><Edit3 size={18} /></button>
+                            <button 
+                              onClick={() => handleEditOrder(order)}
+                              className="p-2 text-slate-300 hover:text-slate-900 transition-all"
+                            >
+                              <Edit3 size={18} />
+                            </button>
                          </td>
                       </tr>
                     ))}
@@ -229,8 +276,8 @@ const PurchaseOrders: React.FC<PurchaseOrdersProps> = ({ activeOutlet }) => {
                  </div>
                  <div className="p-6 bg-white/5 rounded-3xl border border-white/10 space-y-4 max-w-sm mx-auto">
                     <div className="flex justify-between text-xs">
-                       <span className="text-slate-500">Extraction Confidence</span>
-                       <span className="font-black text-emerald-400">{(selectedOcr?.confidence_score * 100).toFixed(0)}%</span>
+                       <span className="text-slate-500">{selectedOcr?.is_existing ? 'Audit Status' : 'Extraction Confidence'}</span>
+                       <span className="font-black text-emerald-400">{selectedOcr?.is_existing ? 'VERIFIED' : `${(selectedOcr?.confidence_score * 100 || 0).toFixed(0)}%`}</span>
                     </div>
                     <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
                        <div className="bg-emerald-400 h-full" style={{ width: `${selectedOcr?.confidence_score * 100}%` }}></div>
@@ -371,7 +418,7 @@ const PurchaseOrders: React.FC<PurchaseOrdersProps> = ({ activeOutlet }) => {
                       onClick={handleCommitOcr}
                       className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all"
                     >
-                       Confirm & Post
+                       {selectedOcr?.is_existing ? 'Update Order' : 'Confirm & Post'}
                     </button>
                  </div>
               </div>

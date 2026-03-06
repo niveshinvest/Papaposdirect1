@@ -100,10 +100,24 @@ export const notificationService = {
   },
 
   async sendWhatsApp(insight: AIInsight, phone: string) {
-    // Simulated Meta API Handshake
+    const client = getSupabase();
+    if (!client) return;
+
+    // 1. Log Outbound Message
+    const { error: msgErr } = await client.from('whatsapp_messages').insert({
+      company_id: insight.company_id,
+      sender: 'SYSTEM',
+      recipient: phone,
+      message_body: `[ALERT] ${insight.title}: ${insight.summary}`,
+      direction: 'OUTBOUND',
+      status: 'SENT'
+    });
+
+    if (msgErr) console.error("WhatsApp Log Error:", msgErr.message);
+
+    // 2. Simulated Meta API Call
     console.log(`[WHATSAPP-API] Sending Template to ${phone}: ${insight.title}`);
     await new Promise(resolve => setTimeout(resolve, 1000));
-    // Implementation: In production, this calls window.fetch(META_API_URL)
   },
 
   async sendEmail(insight: AIInsight, email: string) {

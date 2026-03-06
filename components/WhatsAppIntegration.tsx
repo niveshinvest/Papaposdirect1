@@ -11,6 +11,7 @@ import { getSupabase, authService } from '../services/supabaseService';
 
 const WhatsAppIntegration: React.FC = () => {
   const [config, setConfig] = useState<any>(null);
+  const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +33,15 @@ const WhatsAppIntegration: React.FC = () => {
       
       if (fetchErr) throw fetchErr;
       setConfig(company?.whatsapp_config || { is_connected: false });
+
+      // Load Recent Messages
+      const { data: msgs } = await client
+        .from('whatsapp_messages')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      setMessages(msgs || []);
     } catch (e: any) {
       console.error(e);
       setError(e.message || "Failed to load bot registry.");
@@ -185,6 +195,48 @@ const WhatsAppIntegration: React.FC = () => {
               </div>
            </div>
          )}
+      </div>
+
+      <div className="bg-white rounded-[48px] border border-slate-100 shadow-sm overflow-hidden">
+         <div className="p-8 border-b bg-slate-50/50 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+               <History size={20} className="text-slate-400" />
+               <h3 className="font-black text-slate-800 uppercase text-sm tracking-widest">Traffic Ledger</h3>
+            </div>
+            <span className="px-3 py-1 bg-white border rounded-full text-[10px] font-black text-slate-400 uppercase tracking-widest">Last 10 Events</span>
+         </div>
+         <div className="overflow-x-auto">
+            <table className="w-full text-left">
+               <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                  <tr>
+                     <th className="px-8 py-5">Timestamp</th>
+                     <th className="px-8 py-5">Sender/Recipient</th>
+                     <th className="px-8 py-5">Direction</th>
+                     <th className="px-8 py-5">Message Body</th>
+                     <th className="px-8 py-5">Status</th>
+                  </tr>
+               </thead>
+               <tbody className="divide-y divide-slate-50">
+                  {messages.length === 0 ? (
+                    <tr><td colSpan={5} className="py-20 text-center text-slate-300 font-black uppercase text-xs">No traffic recorded</td></tr>
+                  ) : messages.map((m, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                       <td className="px-8 py-6 text-xs font-bold text-slate-500">{new Date(m.created_at).toLocaleString()}</td>
+                       <td className="px-8 py-6 font-black text-slate-800">{m.direction === 'INBOUND' ? m.sender : m.recipient}</td>
+                       <td className="px-8 py-6">
+                          <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${m.direction === 'INBOUND' ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                             {m.direction}
+                          </span>
+                       </td>
+                       <td className="px-8 py-6 text-xs font-medium text-slate-600 max-w-xs truncate">{m.message_body}</td>
+                       <td className="px-8 py-6">
+                          <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[9px] font-black uppercase tracking-widest">{m.status}</span>
+                       </td>
+                    </tr>
+                  ))}
+               </tbody>
+            </table>
+         </div>
       </div>
     </div>
   );
