@@ -225,8 +225,9 @@ export const recipeService = {
   async queueRecipe(recipeId: string, outletId: string): Promise<RecipeEntry> {
     const profile = await authService.getProfile();
     if (!profile?.company_id) throw new Error("Company ID missing from profile");
-
+    console.log("Myoutlet_id", outletId);
     const client = getSupabase();
+
     if (!client) throw new Error("Supabase client not initialized");
 
     // Check current status
@@ -238,7 +239,8 @@ export const recipeService = {
       .eq('id', recipeId)
       .single();
 
-    if (fetchError) throw new Error(fetchError.message);
+     console.log("heheheheeeheheeh", fetchError.message);
+    if (fetchError) throw new Error( fetchError.message);
     if (current.status !== 'DRAFT') throw new Error(`Cannot queue recipe in ${current.status} state. Must be DRAFT.`);
 
     const { data, error } = await client
@@ -249,7 +251,7 @@ export const recipeService = {
       .eq('id', recipeId)
       .select()
       .single();
-
+       
     if (error) throw new Error(error.message);
     return data;
   },
