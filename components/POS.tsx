@@ -550,7 +550,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
       // FIX START: INV-C-01 Automated Recipe Depletion
       // Trigger background depletion to avoid blocking UI
-      depleteInventoryForOrder(totals.processedItems, activeOutlet.id);
+      depleteInventoryForOrder(totals.processedItems, activeOutlet.id, order.id);
       // FIX END
 
       setLastInvoice({ ...invoice, items: totals.processedItems, taxBreakup: totals.taxBreakup });
@@ -587,7 +587,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
     }
   };
 
-  const depleteInventoryForOrder = async (items: any[], outletId: string) => {
+  const depleteInventoryForOrder = async (items: any[], outletId: string, orderId: string) => {
     try {
       for (const item of items) {
         const recipe = await recipeService.getFinalizedRecipeByItemName(item.name, outletId);
@@ -595,7 +595,14 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
           for (const ing of recipe.recipe_json.ingredients) {
             // Deduct from inventory: quantity * recipe_quantity
             const totalDeduction = item.quantity * ing.quantity;
-            await inventoryService.deductStock(ing.name, outletId, totalDeduction, `SALE: ${item.name}`);
+            const targetId = (ing as any).inventory_id || ing.name;
+            await inventoryService.deductStock(
+              targetId, 
+              outletId, 
+              totalDeduction, 
+              `SALE: ${item.name}`,
+              { type: 'POS_SALE', id: orderId }
+            );
           }
         }
       }

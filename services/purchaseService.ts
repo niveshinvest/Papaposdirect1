@@ -157,6 +157,8 @@ export const purchaseService = {
             qty_change: item.qty,
             balance_after: item.qty,
             reason: `Purchase: ${finalData.invoice_number || 'N/A'}`,
+            reference_type: 'PURCHASE',
+            reference_id: po.id,
             created_at: new Date().toISOString()
           });
         }

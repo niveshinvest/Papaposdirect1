@@ -278,7 +278,7 @@ export const inventoryService = {
       throw new Error('Safety Block: outlet_id missing');
     }
 
-    // FIX START
+    // FIX START: Resolve Item ID if name is passed
     let resolvedItemId = payload.item_id;
     if (resolvedItemId && !resolvedItemId.startsWith('INV-')) {
       const { data: inv } = await supabaseClient
@@ -299,9 +299,9 @@ export const inventoryService = {
         item_id: resolvedItemId,
         company_id,            // 🔒
         created_by: user_id,
+        user_id: user_id,      // Ensure user_id is set for audit
         created_at: new Date().toISOString()
       });
-    // FIX END
 
     if (ledgerError) throw new Error(ledgerError.message);
 
@@ -338,22 +338,47 @@ export const inventoryService = {
     return this.record({ ...rest, qty_change: qty, transaction_type: 'ADJUSTMENT' });
   },
 
-  async deductStock(itemId: string, outletId: string, qtyToDeduct: number, reason: string = 'SALE') {
+  async deductStock(itemId: string, outletId: string, qtyToDeduct: number, reason: string = 'SALE', reference?: { type: string, id: string }) {
     const { company_id, user_id } = await tenantContext.require();
     
-    // 1. Fetch active batches for this item, ordered by FIFO (created_at)
+    // 1. Resolve Item ID if name is passed
+    let resolvedItemId = itemId;
+    if (resolvedItemId && !resolvedItemId.startsWith('INV-')) {
+      const { data: inv } = await supabaseClient
+        .from('inventory')
+        .select('id')
+        .eq('company_id', company_id)
+        .eq('outlet_id', outletId)
+        .ilike('name', resolvedItemId)
+        .maybeSingle();
+      if (inv) resolvedItemId = inv.id;
+    }
+
+    // 2. Fetch active batches for this item, ordered by FIFO (created_at)
     const { data: batches, error: fetchError } = await supabaseClient
       .from('inventory_batches')
       .select('*')
       .eq('company_id', company_id)
       .eq('outlet_id', outletId)
-      .eq('item_id', itemId)
+      .eq('item_id', resolvedItemId)
       .gt('current_qty', 0)
       .order('created_at', { ascending: true });
 
     if (fetchError) throw new Error(fetchError.message);
+    
+    // If no batches found, we still record a negative entry in the ledger to maintain accuracy
     if (!batches || batches.length === 0) {
-      console.warn(`[INVENTORY] No stock available for ${itemId} in ${outletId}`);
+      console.warn(`[INVENTORY] No stock available for ${resolvedItemId} in ${outletId}. Recording negative ledger entry.`);
+      await this.record({
+        outlet_id: outletId,
+        item_id: resolvedItemId,
+        transaction_type: 'STOCK_OUT',
+        qty_change: -qtyToDeduct,
+        balance_after: (await this.getTotalStock(resolvedItemId, outletId)) - qtyToDeduct,
+        reason: reason,
+        reference_type: reference?.type,
+        reference_id: reference?.id
+      });
       return;
     }
 
@@ -376,33 +401,77 @@ export const inventoryService = {
       // Record in Ledger
       await this.record({
         outlet_id: outletId,
-        item_id: itemId,
+        item_id: resolvedItemId,
         batch_id: batch.id,
         transaction_type: reason === 'SALE' ? 'SALE' : 'STOCK_OUT',
         qty_change: -deduction,
-        balance_after: (await this.getTotalStock(itemId, outletId)), // Helper needed
-        reason: reason
+        balance_after: (await this.getTotalStock(resolvedItemId, outletId)),
+        reason: reason,
+        reference_type: reference?.type,
+        reference_id: reference?.id
       });
 
       remainingToDeduct -= deduction;
     }
 
     if (remainingToDeduct > 0) {
-       console.warn(`[INVENTORY] Stock-out for ${itemId}: ${remainingToDeduct} units could not be deducted (Insufficient Stock).`);
+       // Record the remaining deficit
+       await this.record({
+        outlet_id: outletId,
+        item_id: resolvedItemId,
+        transaction_type: 'STOCK_OUT',
+        qty_change: -remainingToDeduct,
+        balance_after: (await this.getTotalStock(resolvedItemId, outletId)),
+        reason: `${reason} (Deficit)`,
+        reference_type: reference?.type,
+        reference_id: reference?.id
+      });
     }
   },
 
   async getTotalStock(itemId: string, outletId: string): Promise<number> {
     const { company_id } = await tenantContext.require();
+    
+    // Resolve Item ID if name is passed
+    let resolvedItemId = itemId;
+    if (resolvedItemId && !resolvedItemId.startsWith('INV-')) {
+      const { data: inv } = await supabaseClient
+        .from('inventory')
+        .select('id')
+        .eq('company_id', company_id)
+        .eq('outlet_id', outletId)
+        .ilike('name', resolvedItemId)
+        .maybeSingle();
+      if (inv) resolvedItemId = inv.id;
+    }
+
     const { data, error } = await supabaseClient
-      .from('inventory_batches')
-      .select('current_qty')
+      .from('inventory_ledger')
+      .select('qty_change')
       .eq('company_id', company_id)
       .eq('outlet_id', outletId)
-      .eq('item_id', itemId);
+      .eq('item_id', resolvedItemId);
     
     if (error) throw error;
-    return (data || []).reduce((sum, b) => sum + Number(b.current_qty), 0);
+    return (data || []).reduce((sum, l) => sum + Number(l.qty_change), 0);
+  },
+
+  async fetchAggregatedStock(outletId: string) {
+    const { company_id } = await tenantContext.require();
+    const { data, error } = await supabaseClient
+      .from('inventory_ledger')
+      .select('item_id, qty_change')
+      .eq('company_id', company_id)
+      .eq('outlet_id', outletId);
+    
+    if (error) throw error;
+    
+    const map: Record<string, number> = {};
+    (data || []).forEach(l => {
+      map[l.item_id] = (map[l.item_id] || 0) + Number(l.qty_change);
+    });
+    
+    return map;
   },
 
   async getWeightedAverageCost(itemId: string, outletId: string): Promise<number> {

@@ -11,7 +11,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentView, onViewChange }) => {
   const navItems = [
     { id: ViewMode.DASHBOARD, label: 'Home', icon: <LayoutDashboard size={20} /> },
     { id: ViewMode.POS, label: 'Billing', icon: <Receipt size={20} /> },
-    { id: ViewMode.INVENTORY, label: 'Stock', icon: <Package size={20} /> },
+    { id: ViewMode.INVENTORY, label: 'Inventory Pro', icon: <Package size={20} /> },
     { id: ViewMode.MOBILE_MENU, label: 'More', icon: <MenuIcon size={20} /> },
   ];
 

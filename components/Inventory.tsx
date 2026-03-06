@@ -17,6 +17,7 @@ interface InventoryProps {
 const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
   const [batches, setBatches] = useState<any[]>([]);
   const [ledger, setLedger] = useState<any[]>([]);
+  const [ledgerStock, setLedgerStock] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'STOCK' | 'LEDGER' | 'MASTER'>('STOCK');
   const [isStockInModalOpen, setIsStockInModalOpen] = useState(false);
@@ -75,14 +76,16 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
     if (!activeOutlet) return;
     setLoading(true);
     try {
-      const [batchData, ledgerData, masterData] = await Promise.all([
+      const [batchData, ledgerData, masterData, aggStock] = await Promise.all([
         inventoryService.fetchBatches(activeOutlet.id),
         inventoryService.fetchLedger(activeOutlet.id),
-        inventoryMasterService.fetchAll(activeOutlet.id)
+        inventoryMasterService.fetchAll(activeOutlet.id),
+        inventoryService.fetchAggregatedStock(activeOutlet.id)
       ]);
       setBatches(batchData);
       setLedger(ledgerData);
       setMasterItems(masterData);
+      setLedgerStock(aggStock);
     } catch (e) {
       console.error(e);
     } finally {
@@ -260,29 +263,35 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
 
   const aggregatedStock = useMemo(() => {
     const map: Record<string, any> = {};
-    batches.forEach(b => {
-      if (!map[b.item_id]) {
-        const master = masterItems.find(m => m.id === b.item_id || m.name === b.item_id);
-        map[b.item_id] = { 
-          item_id: b.item_id, 
-          total_qty: 0, 
-          total_value: 0, 
-          batches_count: 0, 
-          unit: b.unit || 'units',
-          min_level: master?.min_level || 0,
-          category: master?.category || 'General',
-          vendor: master?.preferred_vendor || 'N/A'
-        };
-      }
-      map[b.item_id].total_qty += Number(b.current_qty);
-      map[b.item_id].total_value += Number(b.current_qty) * Number(b.cost_price || 0);
-      map[b.item_id].batches_count += 1;
+    
+    // Initialize from Master Items to ensure all SKUs are shown even if no ledger/batch exists
+    masterItems.forEach(m => {
+      map[m.id] = {
+        item_id: m.id,
+        item_name: m.name,
+        total_qty: ledgerStock[m.id] || 0,
+        total_value: 0,
+        batches_count: 0,
+        unit: m.unit || 'units',
+        min_level: m.min_level || 0,
+        category: m.category || 'General',
+        vendor: m.preferred_vendor || 'N/A'
+      };
     });
+
+    // Add batch value info
+    batches.forEach(b => {
+      if (map[b.item_id]) {
+        map[b.item_id].total_value += Number(b.current_qty) * Number(b.cost_price || 0);
+        map[b.item_id].batches_count += 1;
+      }
+    });
+
     return Object.values(map).map(item => ({
       ...item,
-      wac: item.total_qty > 0 ? item.total_value / item.total_qty : 0
+      wac: item.total_qty > 0 ? item.total_value / Math.max(1, item.total_qty) : 0
     }));
-  }, [batches, masterItems]);
+  }, [ledgerStock, batches, masterItems]);
 
   const filteredStock = useMemo(() => {
     return aggregatedStock.filter(s => {
@@ -470,7 +479,8 @@ const Inventory: React.FC<InventoryProps> = ({ activeOutlet }) => {
                 {filteredStock.map((item, idx) => (
                   <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-8 py-6">
-                       <p className="font-black text-slate-900 text-lg uppercase tracking-tight">{item.item_id}</p>
+                       <p className="font-black text-slate-900 text-lg uppercase tracking-tight">{item.item_name || item.item_id}</p>
+                       {item.item_name && <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{item.item_id}</p>}
                     </td>
                     <td className="px-8 py-6">
                        <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black">{item.batches_count} Lots</span>
