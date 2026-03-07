@@ -240,7 +240,6 @@ export const recipeService = {
       .eq('id', recipeId)
       .single();
 
-     console.log("heheheheeeheheeh", fetchError.message);
     if (fetchError) throw new Error( fetchError.message);
     if (current.status !== 'DRAFT') throw new Error(`Cannot queue recipe in ${current.status} state. Must be DRAFT.`);
 
