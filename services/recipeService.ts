@@ -242,7 +242,8 @@ export const recipeService = {
 
     if (fetchError) throw new Error( fetchError.message);
     if (current.status !== 'DRAFT') throw new Error(`Cannot queue recipe in ${current.status} state. Must be DRAFT.`);
-
+    
+    console.log("checkstatuscomplete");
     const { data, error } = await client
       .from('recipes')
       .update({ status: 'QUEUED' })
