@@ -352,8 +352,7 @@ export const aiService = {
     try {
       const { error } = await client
         .from('ai_insights')
-        .update({ is_dismissed: true })
-        .eq('id', id);
+        .upsert({ id, is_dismissed: true, updated_at: new Date().toISOString() });
       if (error) throw new Error(error.message);
     } catch (e) {
       console.error("Dismiss failed:", e);
@@ -365,7 +364,11 @@ export const aiService = {
     const profile = await authService.getProfile();
     if (profile?.role !== 'OWNER') throw new Error("Owner-only action.");
 
-    const { error } = await client.from('companies').update({ ai_kill_switch: status }).eq('id', companyId);
+    const { error } = await client.from('companies').upsert({ 
+      id: companyId, 
+      ai_kill_switch: status,
+      updated_at: new Date().toISOString()
+    });
     if (error) throw new Error(error.message);
 
     await client.from('audit_logs').insert({
@@ -381,12 +384,12 @@ export const aiService = {
     const profile = await authService.getProfile();
     if (!client || !profile) return;
     try {
-      const updates: any = { status };
+      const updates: any = { id, status, updated_at: new Date().toISOString() };
       if (status === 'APPROVED' || status === 'APPLIED') {
          updates.approved_at = new Date().toISOString();
          updates.approved_by = profile.id;
       }
-      const { error } = await client.from('ai_recommendations').update(updates).eq('id', id);
+      const { error } = await client.from('ai_recommendations').upsert(updates);
       if (error) throw new Error(error.message);
     } catch (e) {
       console.error("Status update failed:", e);

@@ -15,9 +15,46 @@ const WhatsAppIntegration: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form, setForm] = useState({
+    phone_number: '',
+    access_token: '',
+    waba_id: ''
+  });
+
   useEffect(() => {
     loadConfig();
   }, []);
+
+  const handleSaveConfig = async () => {
+    setLoading(true);
+    try {
+      const client = getSupabase();
+      const profile = await authService.getProfile();
+      const newConfig = { 
+        ...config, 
+        ...form, 
+        is_connected: true,
+        webhook_verified: true // Mocking verification for now
+      };
+      
+      const { error: updErr } = await client
+        .from('companies')
+        .upsert({ 
+          id: profile.company_id, 
+          whatsapp_config: newConfig,
+          updated_at: new Date().toISOString()
+        });
+      
+      if (updErr) throw updErr;
+      setConfig(newConfig);
+      setIsModalOpen(false);
+    } catch (e: any) {
+      alert("Configuration failed: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadConfig = async () => {
     setLoading(true);
@@ -60,8 +97,11 @@ const WhatsAppIntegration: React.FC = () => {
       
       const { error: updErr } = await client
         .from('companies')
-        .update({ whatsapp_config: newConfig })
-        .eq('id', profile.company_id);
+        .upsert({ 
+          id: profile.company_id, 
+          whatsapp_config: newConfig,
+          updated_at: new Date().toISOString()
+        });
       
       if (updErr) throw updErr;
       setConfig(newConfig);
@@ -99,7 +139,17 @@ const WhatsAppIntegration: React.FC = () => {
            <button onClick={loadConfig} className="p-3 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all shadow-sm">
               <RefreshCw size={18} />
            </button>
-           <button className="flex items-center gap-2 bg-[#25D366] text-white px-8 py-3 rounded-xl font-black shadow-xl hover:scale-105 transition-all uppercase text-xs tracking-widest">
+           <button 
+             onClick={() => {
+               setForm({
+                 phone_number: config?.phone_number || '',
+                 access_token: config?.access_token || '',
+                 waba_id: config?.waba_id || ''
+               });
+               setIsModalOpen(true);
+             }}
+             className="flex items-center gap-2 bg-[#25D366] text-white px-8 py-3 rounded-xl font-black shadow-xl hover:scale-105 transition-all uppercase text-xs tracking-widest"
+           >
               <Zap size={20} /> Configure API
            </button>
         </div>
@@ -163,7 +213,12 @@ const WhatsAppIntegration: React.FC = () => {
                     WhatsApp bot integration requires a valid Meta Business Access Token and Verified WABA ID. Configuration is currently absent in your company profile.
                  </p>
               </div>
-              <button className="px-10 py-5 bg-white text-slate-900 rounded-[24px] font-black uppercase tracking-widest text-xs shadow-xl active:scale-95 transition-all">Setup API Credentials</button>
+              <button 
+                onClick={() => setIsModalOpen(true)}
+                className="px-10 py-5 bg-white text-slate-900 rounded-[24px] font-black uppercase tracking-widest text-xs shadow-xl active:scale-95 transition-all"
+              >
+                Setup API Credentials
+              </button>
            </div>
          ) : (
            <div className="bg-slate-900 p-10 rounded-[48px] text-white space-y-8 relative overflow-hidden shadow-2xl">
@@ -238,6 +293,65 @@ const WhatsAppIntegration: React.FC = () => {
             </table>
          </div>
       </div>
+      {/* Configuration Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[48px] w-full max-w-xl p-10 space-y-8 animate-in zoom-in duration-300">
+            <div className="space-y-2">
+              <h3 className="text-3xl font-black text-slate-900">API Credentials</h3>
+              <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Meta Cloud Infrastructure Setup</p>
+            </div>
+
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Business Phone Number</label>
+                <input 
+                  type="text" 
+                  value={form.phone_number}
+                  onChange={(e) => setForm({...form, phone_number: e.target.value})}
+                  placeholder="+91 98765 43210"
+                  className="w-full p-6 bg-slate-50 border border-slate-100 rounded-3xl font-bold focus:ring-4 ring-[#25D366]/10 outline-none transition-all"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Meta Access Token</label>
+                <input 
+                  type="password" 
+                  value={form.access_token}
+                  onChange={(e) => setForm({...form, access_token: e.target.value})}
+                  placeholder="EAAG..."
+                  className="w-full p-6 bg-slate-50 border border-slate-100 rounded-3xl font-bold focus:ring-4 ring-[#25D366]/10 outline-none transition-all"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">WABA ID</label>
+                <input 
+                  type="text" 
+                  value={form.waba_id}
+                  onChange={(e) => setForm({...form, waba_id: e.target.value})}
+                  placeholder="1092837465..."
+                  className="w-full p-6 bg-slate-50 border border-slate-100 rounded-3xl font-bold focus:ring-4 ring-[#25D366]/10 outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-4 pt-4">
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="flex-1 py-5 bg-slate-100 text-slate-500 rounded-3xl font-black uppercase tracking-widest text-xs hover:bg-slate-200 transition-all"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSaveConfig}
+                className="flex-1 py-5 bg-[#25D366] text-white rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl shadow-[#25D366]/20 hover:scale-105 active:scale-95 transition-all"
+              >
+                Save & Connect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -78,7 +78,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
     setIsGeneratingAI(true);
     try {
       console.log("RECIPES_UI: TRIGGER_GENERATE", { itemName: selectedTarget.name });
-      const newRecipe = await recipeService.generateRecipe(selectedTarget.name, activeOutlet.id);
+      const newRecipe = await recipeService.generateRecipe(selectedTarget.name, activeOutlet.id, selectedTarget.id);
       console.log("RECIPES_UI: GENERATE_SUCCESS", newRecipe);
       
       await loadData();

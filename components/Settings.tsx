@@ -131,10 +131,16 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
       
       // If setting as default, unset others first in this outlet
       if (mopForm.is_default) {
-        await client
+        const { data: modes } = await client
           .from('payment_modes')
-          .update({ is_default: false })
+          .select('id')
           .eq('outlet_id', activeOutlet.id);
+        
+        if (modes && modes.length > 0) {
+          await client
+            .from('payment_modes')
+            .upsert(modes.map(m => ({ id: m.id, is_default: false })));
+        }
       }
 
       const { error } = await client.from('payment_modes').upsert({
@@ -214,8 +220,11 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
       // but we'll be explicit for UI responsiveness
       const { error } = await client
         .from('ai_providers')
-        .update({ is_active: !provider.is_active })
-        .eq('id', provider.id);
+        .upsert({ 
+          id: provider.id,
+          is_active: !provider.is_active,
+          updated_at: new Date().toISOString()
+        });
 
       if (error) throw error;
       await loadAIProviders();
@@ -370,8 +379,11 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
       const client = getSupabase();
       const { error } = await client
         .from('companies')
-        .update({ notification_prefs: notifPrefs })
-        .eq('id', org.id);
+        .upsert({ 
+          id: org.id, 
+          notification_prefs: notifPrefs,
+          updated_at: new Date().toISOString()
+        });
       
       if (error) throw error;
       alert("Alert preferences updated.");

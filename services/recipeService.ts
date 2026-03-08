@@ -10,6 +10,7 @@ export interface RecipeEntry {
   company_id: string;
   outlet_id: string;
   item_name: string;
+  menu_item_id?: string;
   recipe_json: {
     ingredients: Array<{
       name: string;
@@ -39,7 +40,7 @@ export const recipeService = {
    * - INSERT recipe with status = 'DRAFT', source = 'AI'
    * - RETURN saved record
    */
-  async generateRecipe(itemName: string, outletId: string): Promise<RecipeEntry> {
+  async generateRecipe(itemName: string, outletId: string, menuItemId?: string): Promise<RecipeEntry> {
     console.log(`RECIPE_SERVICE: START_GENERATION for ${itemName}`);
     
     const client = getSupabase();
@@ -94,6 +95,7 @@ export const recipeService = {
         company_id: profile.company_id,
         outlet_id: outletId,
         item_name: itemName,
+        menu_item_id: menuItemId || null,
         recipe_json: recipeJson,
         ai_prompt: prompt,
         source: 'AI',
@@ -195,7 +197,7 @@ export const recipeService = {
     const insertPayload = {
       company_id: profile.company_id,
       outlet_id: payload.outletId,
-      menu_item_id:payload.menuitemid,
+      menu_item_id: payload.menuitemid || null,
       item_name: resolvedItemName,
       recipe_json: recipeJson,
       source: 'MANUAL',
@@ -234,7 +236,7 @@ export const recipeService = {
     // Check current status
     const { data: current, error: fetchError } = await client
       .from('recipes')
-      .select('status')
+      .select('status, item_name, menu_item_id')
       .eq('company_id', profile.company_id)
       .eq('outlet_id', outletId)
       .eq('id', recipeId)
@@ -246,10 +248,15 @@ export const recipeService = {
     console.log("checkstatuscomplete");
     const { data, error } = await client
       .from('recipes')
-      .update({ status: 'QUEUED' })
-      .eq('company_id', profile.company_id)
-      .eq('outlet_id', outletId)
-      .eq('id', recipeId)
+      .upsert({ 
+        id: recipeId,
+        company_id: profile.company_id,
+        outlet_id: outletId,
+        item_name: current.item_name,
+        menu_item_id: current.menu_item_id,
+        status: 'QUEUED',
+        updated_at: new Date().toISOString()
+      })
       .select()
       .single();
        
@@ -270,13 +277,23 @@ export const recipeService = {
     const client = getSupabase();
     if (!client) throw new Error("Supabase client not initialized");
 
+    const { data: current } = await client
+      .from('recipes')
+      .select('item_name, menu_item_id')
+      .eq('id', recipeId)
+      .single();
 
     const { data, error } = await client
       .from('recipes')
-      .update({ status: 'FINALIZED' })
-      .eq('company_id', profile.company_id)
-      .eq('outlet_id', outletId)
-      .eq('id', recipeId)
+      .upsert({ 
+        id: recipeId,
+        company_id: profile.company_id,
+        outlet_id: outletId,
+        item_name: current?.item_name,
+        menu_item_id: current?.menu_item_id,
+        status: 'FINALIZED',
+        updated_at: new Date().toISOString()
+      })
       .select()
       .single();
 
@@ -348,12 +365,23 @@ export const recipeService = {
     const client = getSupabase();
     if (!client) throw new Error("Supabase client not initialized");
 
+    const { data: current } = await client
+      .from('recipes')
+      .select('item_name, menu_item_id')
+      .eq('id', recipeId)
+      .single();
+
     const { error } = await client
       .from('recipes')
-      .update({ status: 'REJECTED' })
-      .eq('company_id', profile.company_id)
-      .eq('outlet_id', outletId)
-      .eq('id', recipeId);
+      .upsert({ 
+        id: recipeId,
+        company_id: profile.company_id,
+        outlet_id: outletId,
+        item_name: current?.item_name,
+        menu_item_id: current?.menu_item_id,
+        status: 'REJECTED',
+        updated_at: new Date().toISOString()
+      });
 
     if (error) throw new Error(error.message);
   }

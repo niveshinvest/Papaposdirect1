@@ -57,7 +57,7 @@ export const staffService = {
 
       if (emailError) {
         // Mark as pending if email failed so admin knows they need to retry
-        await client.from('staff_users').update({ status: 'invited' }).eq('id', staff.id);
+        await client.from('staff_users').upsert({ id: staff.id, status: 'invited', updated_at: new Date().toISOString() });
         throw new Error("Staff added but invite email failed. Retry required.");
       }
     } catch (e) {
@@ -194,8 +194,7 @@ export const staffService = {
 
     const { error: updateError } = await client
       .from('staff_users')
-      .update({ role })
-      .eq('id', staffId);
+      .upsert({ id: staffId, role, updated_at: new Date().toISOString() });
 
     if (updateError) throw new Error(updateError.message);
 
@@ -231,8 +230,7 @@ export const staffService = {
 
     const { error: updateError } = await client
       .from('staff_users')
-      .update({ outlet_ids: outletIds })
-      .eq('id', staffId);
+      .upsert({ id: staffId, outlet_ids: outletIds, updated_at: new Date().toISOString() });
 
     if (updateError) throw new Error(updateError.message);
 
@@ -259,8 +257,7 @@ export const staffService = {
 
     const { error } = await client
       .from('staff_users')
-      .update({ status })
-      .eq('id', staffId);
+      .upsert({ id: staffId, status, updated_at: new Date().toISOString() });
 
     if (error) throw new Error(error.message);
 

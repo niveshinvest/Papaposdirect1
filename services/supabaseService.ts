@@ -317,8 +317,11 @@ export const inventoryService = {
         const newQty = Number(batch.current_qty) + Number(payload.qty_change);
         await supabaseClient
           .from('inventory_batches')
-          .update({ current_qty: newQty, updated_at: new Date().toISOString() })
-          .eq('id', payload.batch_id);
+          .upsert({ 
+            id: payload.batch_id, 
+            current_qty: newQty, 
+            updated_at: new Date().toISOString() 
+          });
       }
     }
   },
@@ -393,8 +396,11 @@ export const inventoryService = {
       // Update Batch
       const { error: updateError } = await supabaseClient
         .from('inventory_batches')
-        .update({ current_qty: newQty, updated_at: new Date().toISOString() })
-        .eq('id', batch.id);
+        .upsert({ 
+          id: batch.id, 
+          current_qty: newQty, 
+          updated_at: new Date().toISOString() 
+        });
 
       if (updateError) throw new Error(updateError.message);
 

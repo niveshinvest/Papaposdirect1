@@ -35,13 +35,13 @@ export const kitchenService = {
     
     const { error } = await client
       .from('kitchen_orders')
-      .update({ 
+      .upsert({ 
+        id: ticketId,
+        company_id: profile.company_id,
+        outlet_id: outletId,
         status: nextStatus,
         updated_at: new Date().toISOString()
-      })
-      .eq('id', ticketId)
-      .eq('company_id', profile.company_id)
-      .eq('outlet_id', outletId);
+      });
       
     if (error) throw new Error(error.message);
   },
