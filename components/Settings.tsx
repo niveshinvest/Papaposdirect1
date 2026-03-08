@@ -134,7 +134,9 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
         const { data: modes } = await client
           .from('payment_modes')
           .select('id')
-          .eq('outlet_id', activeOutlet.id);
+          .eq('outlet_id', activeOutlet.id)
+          .eq('company_id', org.id);
+
         
         if (modes && modes.length > 0) {
           await client
