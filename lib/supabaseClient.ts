@@ -26,7 +26,14 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     autoRefreshToken: true,
     detectSessionInUrl: true
   },
+
+  
   global: {
     headers: { 'x-application-name': 'papapos' }
   }
+
+  
 });
+if (typeof window !== "undefined") {
+  (window as any).supabase = supabase;
+}
