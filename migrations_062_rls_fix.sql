@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Ensures menu_items, menu_categories, invoices, and staff can be joined correctly under RLS.
 
-BEGIN;
-
 -- 1. MENU CATEGORIES
 DROP POLICY IF EXISTS "Menu categories visibility" ON public.menu_categories;
 DROP POLICY IF EXISTS "Management manage categories" ON public.menu_categories;
@@ -48,5 +46,3 @@ CREATE POLICY "Management manage profiles" ON public.profiles
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (62, 'rls_hardening_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

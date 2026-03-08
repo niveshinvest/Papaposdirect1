@@ -43,6 +43,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_single_default_ai_provider ON public.ai_providers;
 CREATE TRIGGER trigger_single_default_ai_provider
 BEFORE INSERT OR UPDATE ON public.ai_providers
 FOR EACH ROW EXECUTE FUNCTION public.ensure_single_default_ai_provider();
@@ -60,6 +61,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_single_active_ai_provider ON public.ai_providers;
 CREATE TRIGGER trigger_single_active_ai_provider
 BEFORE INSERT OR UPDATE ON public.ai_providers
 FOR EACH ROW EXECUTE FUNCTION public.ensure_single_active_ai_provider();

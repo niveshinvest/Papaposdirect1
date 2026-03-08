@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Enhances the base inventory table for professional SKU management.
 
-BEGIN;
-
 -- 1. SCHEMA ENHANCEMENT
 ALTER TABLE public.inventory 
 ADD COLUMN IF NOT EXISTS preferred_vendor TEXT,
@@ -43,5 +41,3 @@ CREATE INDEX IF NOT EXISTS idx_inventory_vendor ON public.inventory(preferred_ve
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (71, 'inventory_master_pro_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

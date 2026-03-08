@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Standardizes sync_status, adds missing audit columns, and resolves constraint mismatches.
 
-BEGIN;
-
 -- 1. ORDERS TABLE HARDENING
 ALTER TABLE public.orders 
 ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'synced',
@@ -175,5 +173,3 @@ $func$;
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (65, 'pos_hardening_sync_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

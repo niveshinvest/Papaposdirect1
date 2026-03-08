@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Context: Fixing "Could not find a relationship between 'staff_sessions' and 'profiles'"
 
-BEGIN;
-
 -- 1. VERIFY AND CLEANUP
 -- Ensure we don't have duplicate constraints or broken links
 ALTER TABLE public.staff_sessions DROP CONSTRAINT IF EXISTS staff_sessions_user_id_profiles_fkey;
@@ -32,5 +30,3 @@ NOTIFY pgrst, 'reload schema';
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (58, 'staff_sessions_profiles_fk_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

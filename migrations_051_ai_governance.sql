@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 051: AI GOVERNANCE & KILL-SWITCH
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. KILL-SWITCH STATE ON COMPANIES
 ALTER TABLE public.companies 
 ADD COLUMN IF NOT EXISTS ai_kill_switch BOOLEAN DEFAULT FALSE;
@@ -55,5 +53,3 @@ CREATE POLICY "System Governance Write" ON public.ai_governance_logs
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (51, 'ai_governance_failsafe_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

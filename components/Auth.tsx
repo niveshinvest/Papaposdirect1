@@ -65,10 +65,7 @@ const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
 
         if (authError) throw authError;
         if (authData.user) {
-          const profile = await authService.getProfile();
-          if (profile) {
-            onAuthenticated(profile.companies, profile);
-          }
+          onAuthenticated(null as any, authData.user as any);
           setIsLoading(false);
         }
       }

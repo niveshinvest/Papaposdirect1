@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Creates the 'printers' table as per strict production requirements.
 
-BEGIN;
-
 -- 1. Create the printers table
 CREATE TABLE IF NOT EXISTS public.printers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -60,5 +58,3 @@ CREATE TRIGGER update_printers_updated_at
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (67, 'fix_printer_registry')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

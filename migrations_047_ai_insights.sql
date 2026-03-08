@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 047: AI BUSINESS INTELLIGENCE
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. ENUMS
 DO $$ BEGIN
     CREATE TYPE insight_severity AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL');
@@ -64,5 +62,3 @@ CREATE INDEX IF NOT EXISTS idx_ai_insights_outlet ON public.ai_insights(outlet_i
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (47, 'ai_business_intelligence_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

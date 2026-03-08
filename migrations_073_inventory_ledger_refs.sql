@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Adds reference tracking to the inventory ledger for better auditability.
 
-BEGIN;
-
 -- 1. ADD REFERENCE COLUMNS
 ALTER TABLE public.inventory_ledger 
 ADD COLUMN IF NOT EXISTS reference_type TEXT,
@@ -21,5 +19,3 @@ CREATE INDEX IF NOT EXISTS idx_ledger_reference ON public.inventory_ledger(refer
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (73, 'inventory_ledger_refs_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

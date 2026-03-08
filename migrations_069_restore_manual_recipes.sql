@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Adds 'source' column to 'recipes' table and enforces constraints.
 
-BEGIN;
-
 -- 1. Add source column if it doesn't exist
 DO $$ 
 BEGIN
@@ -54,5 +52,3 @@ END $$;
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (69, 'restore_manual_recipes')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

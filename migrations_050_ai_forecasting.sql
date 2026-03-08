@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 050: AI SALES FORECASTING
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. ENUMS
 DO $$ BEGIN
     CREATE TYPE forecast_horizon AS ENUM ('7_DAYS', '30_DAYS');
@@ -64,5 +62,3 @@ CREATE INDEX IF NOT EXISTS idx_ai_forecasts_lookup ON public.ai_forecasts(compan
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (50, 'ai_sales_forecasting_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

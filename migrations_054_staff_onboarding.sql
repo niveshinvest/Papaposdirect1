@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 054: STAFF ONBOARDING & SECURITY
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. ENHANCE STAFF STATUS
 -- Note: Postgres doesn't allow altering existing Enums in a transaction easily without workarounds.
 -- We use a text check constraint for flexibility if the enum is already present.
@@ -89,5 +87,3 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (54, 'staff_onboarding_security_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

@@ -27,11 +27,13 @@ import DeliveryIntegrations from './components/DeliveryIntegrations';
 import SessionGuard from './components/SessionGuard';
 import TerminalManagement from './components/TerminalManagement';
 import StaffOnboarding from './components/StaffOnboarding';
-import { ViewMode, Organization, User, Outlet } from './types';
-import { authService, cloudOutlets } from './services/supabaseService';
+import { TenantSelection } from './components/TenantSelection';
+import { ViewMode, Organization, User, Outlet, Company } from './types';
+import { authService, cloudOutlets, companyService, outletService, tenantContext, getSupabase } from './services/supabaseService';
+import { getDatabaseVersion, applyMigration, getMigrationFile } from './services/migrationService';
 import { syncService } from './services/syncService';
 import { sessionService } from './services/sessionService';
-import { Store, ChevronDown, Loader2, ShieldAlert } from 'lucide-react';
+import { Store, ChevronDown, Loader2, ShieldAlert, Building2, LogOut } from 'lucide-react';
 
 const Layout: FC<{ 
   children: ReactNode; 
@@ -41,7 +43,8 @@ const Layout: FC<{
   activeOutlet: Outlet | null; 
   outlets: Outlet[]; 
   onOutletChange: (o: Outlet) => void;
-}> = ({ children, view, org, user, activeOutlet, outlets, onOutletChange }) => {
+  onCompanySwitch: () => void;
+}> = ({ children, view, org, user, activeOutlet, outlets, onOutletChange, onCompanySwitch }) => {
   const navigate = useNavigate();
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
@@ -55,6 +58,19 @@ const Layout: FC<{
         <header className="h-16 border-b bg-white/80 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-[100]">
            <div className="flex items-center gap-4">
               <h1 className="font-black text-slate-800 uppercase tracking-tighter text-sm hidden lg:block">{view.replace(/_/g, ' ')}</h1>
+              
+              {/* Company Switcher */}
+              <button 
+                onClick={onCompanySwitch}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-2xl border border-slate-800 relative min-w-[150px] hover:bg-slate-800 transition-all group"
+              >
+                 <Building2 size={14} className="text-orange-500" />
+                 <span className="flex-1 text-[11px] font-black uppercase tracking-tight text-left truncate">
+                   {org?.name || 'Select Company'}
+                 </span>
+                 <ChevronDown size={14} className="text-slate-500 group-hover:text-white" />
+              </button>
+
               <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-2xl border border-slate-100 relative min-w-[200px]">
                  <Store size={14} className="text-orange-50" />
                  <select 
@@ -91,12 +107,41 @@ const AppContent: FC = () => {
   const [authState, setAuthState] = useState<{ user: any | null; org: Organization | null }>({ user: null, org: null });
   const [loading, setLoading] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
+  
+  // Multi-tenant state
+  const [selectionRequired, setSelectionRequired] = useState(false);
+
   const navigate = useNavigate();
   const location = useLocation();
 
-  useEffect(() => {
-    const bootSequence = async () => {
-      try {
+  const bootSequence = async () => {
+    setLoading(true);
+    try {
+      // Auto-run pending migrations
+      const status = await getDatabaseVersion();
+      if (status.needsUpdate) {
+        console.log("Database update required. Applying pending migrations...");
+        for (const version of status.pendingVersions) {
+          const fileName = getMigrationFile(version);
+          if (fileName) {
+            const response = await fetch(`/${fileName}`);
+            const sql = await response.text();
+            await applyMigration(version, sql);
+          }
+        }
+        // Small delay to allow schema cache to refresh
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      const user = await authService.getCurrentUser();
+      if (!user) {
+        setSelectionRequired(false);
+        setLoading(false);
+        return;
+      }
+
+      const ctx = tenantContext.get();
+      if (ctx && ctx.company_id && ctx.outlet_id) {
         const profile = await authService.getProfile();
         if (profile) {
           setAuthState({ user: profile, org: profile.companies });
@@ -112,27 +157,51 @@ const AppContent: FC = () => {
           const cloudList = await cloudOutlets.fetchAll();
           setOutlets(cloudList || []);
           
-          if (cloudList && cloudList.length > 0) {
-            const initialOutlet = cloudList[0];
-            setActiveOutlet(initialOutlet);
-            
-            await sessionService.performHandshake(initialOutlet.id);
+          const active = cloudList.find(o => o.id === ctx.outlet_id) || cloudList[0];
+          if (active) {
+            setActiveOutlet(active);
+            await sessionService.performHandshake(active.id);
             syncService.start(profile);
           }
+          setSelectionRequired(false);
+        } else {
+          setSelectionRequired(true);
         }
-      } catch (e: any) {
-        console.error("POS Boot Failure:", e);
-        setBootError(e.message || "System boot failure. Check cloud connection.");
-      } finally {
-        setLoading(false);
+      } else {
+        setSelectionRequired(true);
       }
-    };
-    
+    } catch (e: any) {
+      console.error("POS Boot Failure:", e);
+      setBootError(e.message || "System boot failure. Check cloud connection.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     bootSequence();
     return () => syncService.stop();
   }, []);
 
+  const handleTenantComplete = async (company: Company, outlet: Outlet, role: string) => {
+    tenantContext.set(company.id, outlet.id, role);
+    await bootSequence();
+  };
+
+  const handleSignOut = async () => {
+    const supabase = getSupabase();
+    await supabase.auth.signOut();
+    localStorage.removeItem('papapos_session');
+    setAuthState({ user: null, org: null });
+    setSelectionRequired(false);
+    navigate('/');
+  };
+
   const handleOutletChange = async (outlet: Outlet) => {
+    const ctx = tenantContext.get();
+    if (ctx) {
+      tenantContext.set(ctx.company_id, outlet.id, ctx.role);
+    }
     setActiveOutlet(outlet);
     setLoading(true);
     try {
@@ -174,42 +243,49 @@ const AppContent: FC = () => {
     );
   }
 
+  if (selectionRequired) {
+    return <TenantSelection onComplete={handleTenantComplete} onSignOut={handleSignOut} />;
+  }
+
+  const commonProps = {
+    org: authState.org,
+    user: authState.user,
+    activeOutlet,
+    outlets,
+    onOutletChange: handleOutletChange,
+    onCompanySwitch: () => setSelectionRequired(true)
+  };
+
   return (
     <SessionGuard>
       <Routes>
         <Route path="/" element={<LandingPage onLogin={() => navigate('/auth')} onGetStarted={() => navigate('/signup')} />} />
-        <Route path="/auth" element={<Auth type="login" onCancel={() => navigate('/')} onAuthenticated={async (org, user) => { 
-          setAuthState({ org, user }); 
-          navigate('/dashboard'); 
-        }} />} />
-        <Route path="/signup" element={<Auth type="signup" onCancel={() => navigate('/')} onAuthenticated={async (org, user) => { 
-          setAuthState({ org, user }); 
-          navigate('/dashboard'); 
-        }} />} />
+        <Route path="/auth" element={<Auth type="login" onCancel={() => navigate('/')} onAuthenticated={bootSequence} />} />
+        <Route path="/signup" element={<Auth type="signup" onCancel={() => navigate('/')} onAuthenticated={bootSequence} />} />
         
         <Route path="/onboarding/:token" element={<StaffOnboarding />} />
 
-        <Route path="/dashboard" element={authState.user ? <Layout view={ViewMode.DASHBOARD} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Dashboard activeOutletId={activeOutlet?.id} profile={authState.user} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/pos" element={authState.user ? <Layout view={ViewMode.POS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><POS org={authState.org} activeOutlet={activeOutlet} currentUser={authState.user} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/inventory" element={authState.user ? <Layout view={ViewMode.INVENTORY} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Inventory activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/recipes" element={authState.user ? <Layout view={ViewMode.RECIPES} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Recipes activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/menu_management" element={authState.user ? <Layout view={ViewMode.MENU_MANAGEMENT} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><MenuManagement activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/outlets" element={authState.user ? <Layout view={ViewMode.OUTLETS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Outlets /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/user_management" element={authState.user ? <Layout view={ViewMode.USER_MANAGEMENT} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><UserManagement /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/terminal_management" element={authState.user ? <Layout view={ViewMode.TERMINAL_MANAGEMENT} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><TerminalManagement /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/settings" element={authState.user ? <Layout view={ViewMode.SETTINGS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Settings org={authState.org} onUpdateOrg={() => {}} activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/ai_insights" element={authState.user ? <Layout view={ViewMode.AI_INSIGHTS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><AIInsights salesData={[]} menuItems={[]} activeOutletId={activeOutlet?.id} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/reports" element={authState.user ? <Layout view={ViewMode.REPORTS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Reports activeOutletId={activeOutlet?.id} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/kitchen_display" element={authState.user ? <Layout view={ViewMode.KITCHEN_DISPLAY} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><KDS activeOutletId={activeOutlet?.id} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/crm" element={authState.user ? <Layout view={ViewMode.CRM} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><CRM customers={[]} onSaveCustomer={async () => {}} onDeleteCustomer={async () => {}} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/whatsapp" element={authState.user ? <Layout view={ViewMode.WHATSAPP} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><WhatsAppIntegration /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/gst_reports" element={authState.user ? <Layout view={ViewMode.GST_REPORTS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><GstReports activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/transfers" element={authState.user ? <Layout view={ViewMode.TRANSFERS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><StockTransfers activeOutlet={activeOutlet} org={authState.org} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/purchase_orders" element={authState.user ? <Layout view={ViewMode.PURCHASE_ORDERS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><PurchaseOrders activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/delivery_partners" element={authState.user ? <Layout view={ViewMode.DELIVERY_PARTNERS} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><DeliveryIntegrations /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/profile" element={authState.user ? <Layout view={ViewMode.PROFILE} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><Profile user={authState.user} org={authState.org} onSignOut={() => { setAuthState({user: null, org: null}); navigate('/'); }} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/recycle_bin" element={authState.user ? <Layout view={ViewMode.RECYCLE_BIN} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><RecycleBin items={[]} onRestore={async () => {}} onPermanentDelete={async () => {}} /></Layout> : <Navigate to="/auth" />} />
-        <Route path="/mobile_menu" element={authState.user ? <Layout view={ViewMode.MOBILE_MENU} org={authState.org} user={authState.user} activeOutlet={activeOutlet} outlets={outlets} onOutletChange={handleOutletChange}><MoreMenu user={authState.user} org={authState.org} onSignOut={() => navigate('/')} onViewChange={(v) => navigate(`/${v.toLowerCase()}`)} currentView={ViewMode.MOBILE_MENU} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/dashboard" element={authState.user ? <Layout view={ViewMode.DASHBOARD} {...commonProps}><Dashboard activeOutletId={activeOutlet?.id} profile={authState.user} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/pos" element={authState.user ? <Layout view={ViewMode.POS} {...commonProps}><POS org={authState.org} activeOutlet={activeOutlet} currentUser={authState.user} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/inventory" element={authState.user ? <Layout view={ViewMode.INVENTORY} {...commonProps}><Inventory activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/recipes" element={authState.user ? <Layout view={ViewMode.RECIPES} {...commonProps}><Recipes activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/menu_management" element={authState.user ? <Layout view={ViewMode.MENU_MANAGEMENT} {...commonProps}><MenuManagement activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/outlets" element={authState.user ? <Layout view={ViewMode.OUTLETS} {...commonProps}><Outlets /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/user_management" element={authState.user ? <Layout view={ViewMode.USER_MANAGEMENT} {...commonProps}><UserManagement /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/terminal_management" element={authState.user ? <Layout view={ViewMode.TERMINAL_MANAGEMENT} {...commonProps}><TerminalManagement /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/settings" element={authState.user ? <Layout view={ViewMode.SETTINGS} {...commonProps}><Settings org={authState.org} onUpdateOrg={() => {}} activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/ai_insights" element={authState.user ? <Layout view={ViewMode.AI_INSIGHTS} {...commonProps}><AIInsights salesData={[]} menuItems={[]} activeOutletId={activeOutlet?.id} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/reports" element={authState.user ? <Layout view={ViewMode.REPORTS} {...commonProps}><Reports activeOutletId={activeOutlet?.id} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/kitchen_display" element={authState.user ? <Layout view={ViewMode.KITCHEN_DISPLAY} {...commonProps}><KDS activeOutletId={activeOutlet?.id} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/crm" element={authState.user ? <Layout view={ViewMode.CRM} {...commonProps}><CRM customers={[]} onSaveCustomer={async () => {}} onDeleteCustomer={async () => {}} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/whatsapp" element={authState.user ? <Layout view={ViewMode.WHATSAPP} {...commonProps}><WhatsAppIntegration /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/gst_reports" element={authState.user ? <Layout view={ViewMode.GST_REPORTS} {...commonProps}><GstReports activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/transfers" element={authState.user ? <Layout view={ViewMode.TRANSFERS} {...commonProps}><StockTransfers activeOutlet={activeOutlet} org={authState.org} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/purchase_orders" element={authState.user ? <Layout view={ViewMode.PURCHASE_ORDERS} {...commonProps}><PurchaseOrders activeOutlet={activeOutlet} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/delivery_partners" element={authState.user ? <Layout view={ViewMode.DELIVERY_PARTNERS} {...commonProps}><DeliveryIntegrations /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/profile" element={authState.user ? <Layout view={ViewMode.PROFILE} {...commonProps}><Profile user={authState.user} org={authState.org} onSignOut={handleSignOut} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/recycle_bin" element={authState.user ? <Layout view={ViewMode.RECYCLE_BIN} {...commonProps}><RecycleBin items={[]} onRestore={async () => {}} onPermanentDelete={async () => {}} /></Layout> : <Navigate to="/auth" />} />
+        <Route path="/mobile_menu" element={authState.user ? <Layout view={ViewMode.MOBILE_MENU} {...commonProps}><MoreMenu user={authState.user} org={authState.org} onSignOut={handleSignOut} onViewChange={(v) => navigate(`/${v.toLowerCase()}`)} currentView={ViewMode.MOBILE_MENU} /></Layout> : <Navigate to="/auth" />} />
 
         <Route path="*" element={<Navigate to={authState.user ? "/dashboard" : "/"} />} />
       </Routes>

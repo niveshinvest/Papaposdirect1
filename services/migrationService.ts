@@ -75,7 +75,20 @@ const AVAILABLE_MIGRATIONS = [
   { version: 63, file: 'migrations_063_invoice_fix.sql' },
   { version: 64, file: 'migrations_064_kds_fix.sql' },
   { version: 65, file: 'migrations_065_pos_hardening.sql' },
-  { version: 66, file: 'migrations_066_invoices_baseline.sql' }
+  { version: 66, file: 'migrations_066_invoices_baseline.sql' },
+  { version: 67, file: 'migrations_067_fix_printer_registry.sql' },
+  { version: 68, file: 'migrations_068_fix_recipe_generation.sql' },
+  { version: 69, file: 'migrations_069_restore_manual_recipes.sql' },
+  { version: 70, file: 'migrations_070_fix_recipe_status_constraint.sql' },
+  { version: 71, file: 'migrations_071_inventory_pro.sql' },
+  { version: 72, file: 'migrations_072_inventory_matching.sql' },
+  { version: 73, file: 'migrations_073_inventory_ledger_refs.sql' },
+  { version: 74, file: 'migrations_074_schema_normalization_audit.sql' },
+  { version: 75, file: 'migrations_075_pos_edit_audit.sql' },
+  { version: 76, file: 'migrations_076_ai_providers.sql' },
+  { version: 77, file: 'migrations_077_ai_ros.sql' },
+  { version: 78, file: 'migrations_078_multi_tenant_fix.sql' },
+  { version: 79, file: 'migrations_079_fix_recursion.sql' }
 ];
 
 export const getDatabaseVersion = async (): Promise<MigrationStatus> => {

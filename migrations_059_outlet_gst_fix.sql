@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 059: OUTLET GST FIX
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. ENFORCE OUTLET GST FIELDS
 ALTER TABLE public.outlets 
 ADD COLUMN IF NOT EXISTS gst_registered BOOLEAN DEFAULT false,
@@ -49,5 +47,3 @@ USING (company_id = public.get_my_company_id());
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (59, 'outlet_gst_fix_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

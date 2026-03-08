@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 053: PAYMENT MODES GOVERNANCE
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. ENUMS
 DO $$ BEGIN
     CREATE TYPE payment_mode_type AS ENUM ('CASH', 'DIGITAL', 'CARD', 'SPLIT', 'OTHER');
@@ -57,8 +55,3 @@ ON CONFLICT DO NOTHING;
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (53, 'payment_modes_governance_v1_fixed')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
--- Refresh PostgREST cache to prevent "Could not find table" error
-NOTIFY pgrst, 'reload schema';
-
-COMMIT;

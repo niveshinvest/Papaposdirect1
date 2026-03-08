@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Adds alias support and matching metadata for AI procurement.
 
-BEGIN;
-
 -- 1. INVENTORY ALIASES
 CREATE TABLE IF NOT EXISTS public.inventory_aliases (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -33,5 +31,3 @@ CREATE INDEX IF NOT EXISTS idx_inventory_alias_name ON public.inventory_aliases(
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (72, 'inventory_matching_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

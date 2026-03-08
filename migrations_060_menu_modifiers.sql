@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 060: MENU MODIFIERS
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. ADD MODIFIERS COLUMN TO MENU ITEMS
 ALTER TABLE public.menu_items 
 ADD COLUMN IF NOT EXISTS modifiers JSONB DEFAULT '[]';
@@ -15,5 +13,3 @@ ADD COLUMN IF NOT EXISTS modifiers JSONB DEFAULT '[]';
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (60, 'menu_modifiers_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

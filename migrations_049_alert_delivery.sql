@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 049: ALERT DELIVERY ENGINE
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. NOTIFICATION PREFERENCES ON COMPANIES
 ALTER TABLE public.companies 
 ADD COLUMN IF NOT EXISTS notification_prefs JSONB DEFAULT '{
@@ -49,5 +47,3 @@ CREATE INDEX IF NOT EXISTS idx_alert_deliveries_status ON public.alert_deliverie
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (49, 'alert_delivery_engine_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

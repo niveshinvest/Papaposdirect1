@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 056: ANALYTICS & COMPLIANCE RPCS
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. RPC: TOP SELLING ITEMS
 CREATE OR REPLACE FUNCTION public.get_top_selling_items(
     p_company_id UUID,
@@ -77,5 +75,3 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (56, 'analytics_hsn_top_rpcs_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

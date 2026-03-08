@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Context: Resolving "column invoices.taxable_value does not exist" and adding audit-ready GST headers.
 
-BEGIN;
-
 -- 1. ADD COMPLIANT COLUMNS
 ALTER TABLE public.invoices 
 ADD COLUMN IF NOT EXISTS taxable_value NUMERIC(15,2),
@@ -38,8 +36,3 @@ CREATE INDEX IF NOT EXISTS idx_invoices_taxable_lookup ON public.invoices(taxabl
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (57, 'invoice_gst_schema_compliance_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
--- Refresh PostgREST cache
-NOTIFY pgrst, 'reload schema';
-
-COMMIT;

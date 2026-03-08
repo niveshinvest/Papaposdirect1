@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Creates the 'recipes' table with strict status workflow.
 
-BEGIN;
-
 -- 1. Create the recipes table
 CREATE TABLE IF NOT EXISTS public.recipes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -59,5 +57,3 @@ CREATE TRIGGER tr_update_recipes_updated_at
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (68, 'fix_recipe_generation')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

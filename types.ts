@@ -50,6 +50,28 @@ export interface AIDataLineage {
   limitations: string[];
 }
 
+export interface Company {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface CompanyUser {
+  id: string;
+  user_id: string;
+  company_id: string;
+  role: UserRole;
+  created_at: string;
+  companies?: Company;
+}
+
+export interface OutletUser {
+  id: string;
+  user_id: string;
+  outlet_id: string;
+  role: UserRole;
+}
+
 export interface Organization {
   id: string;
   name: string;

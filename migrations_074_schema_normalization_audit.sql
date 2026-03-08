@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Normalizes schemas, adds missing foreign keys, and implements the POS audit system.
 
-BEGIN;
-
 -- 1. POS ORDER AUDIT SYSTEM
 CREATE TABLE IF NOT EXISTS public.pos_order_audit (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -59,5 +57,3 @@ CREATE INDEX IF NOT EXISTS idx_recipes_menu_item ON public.recipes(menu_item_id)
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (74, 'schema_normalization_audit_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

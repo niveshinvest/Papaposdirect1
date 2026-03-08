@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Ensures all canonical fields and constraints exist for the invoices table.
 
-BEGIN;
-
 -- 1. ENSURE TABLE EXISTS
 CREATE TABLE IF NOT EXISTS public.invoices (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -100,5 +98,3 @@ ALTER TABLE public.invoices ADD CONSTRAINT invoices_sync_status_check
 CREATE INDEX IF NOT EXISTS idx_invoices_company_outlet ON public.invoices(company_id, outlet_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_sync_status ON public.invoices(sync_status) WHERE sync_status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_invoices_invoice_number ON public.invoices(invoice_number);
-
-COMMIT;

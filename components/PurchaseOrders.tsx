@@ -94,7 +94,8 @@ const PurchaseOrders: React.FC<PurchaseOrdersProps> = ({ activeOutlet }) => {
             unit: it.unit,
             unit_price: it.price,
             total_amount: it.qty * it.price
-          }))
+          })),
+          activeOutlet.id
         );
       } else {
         // Create new from OCR

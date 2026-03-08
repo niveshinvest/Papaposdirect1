@@ -23,10 +23,36 @@ export const testConnection = async (url: string, key: string) => {
    ❗ NO SERVICE MAY BYPASS THIS
 ============================================================================ */
 export const tenantContext = {
+  get() {
+    const session = localStorage.getItem('papapos_session');
+    if (!session) return null;
+    try {
+      return JSON.parse(session);
+    } catch (e) {
+      return null;
+    }
+  },
+
+  set(company_id: string, outlet_id: string | null, role: string) {
+    const session = this.get() || {};
+    localStorage.setItem('papapos_session', JSON.stringify({
+      ...session,
+      company_id,
+      outlet_id,
+      role
+    }));
+  },
+
   async require() {
+    const ctx = this.get();
+    if (ctx && ctx.company_id) {
+      return ctx;
+    }
+
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) throw new Error('Unauthorized');
 
+    // Fallback to profile for legacy support
     const { data: profile, error } = await supabaseClient
       .from('profiles')
       .select('*')
@@ -46,6 +72,68 @@ export const tenantContext = {
 };
 
 /* ============================================================================
+   COMPANY SERVICE
+============================================================================ */
+export const companyService = {
+  async fetchUserCompanies() {
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (!user) return [];
+
+    const { data, error } = await supabaseClient
+      .from('company_users')
+      .select('*, companies(*)')
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createCompany(name: string) {
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
+
+    const { data: company, error: cError } = await supabaseClient
+      .from('companies')
+      .insert({ name })
+      .select().single();
+
+    if (cError) throw cError;
+
+    const { error: cuError } = await supabaseClient.from('company_users').insert({ 
+      user_id: user.id,
+      company_id: company.id, 
+      role: 'OWNER'
+    });
+
+    if (cuError) throw cuError;
+
+    // Create default outlet
+    await supabaseClient.from('outlets').insert({
+      id: `main-${company.id.slice(0, 8)}`,
+      company_id: company.id,
+      name: 'Main Outlet'
+    });
+
+    return company;
+  }
+};
+
+/* ============================================================================
+   OUTLET SERVICE
+============================================================================ */
+export const outletService = {
+  async fetchByCompany(companyId: string) {
+    const { data, error } = await supabaseClient
+      .from('outlets')
+      .select('*')
+      .eq('company_id', companyId);
+
+    if (error) throw error;
+    return data || [];
+  }
+};
+
+/* ============================================================================
    AUTH SERVICE
 ============================================================================ */
 export const authService = {
@@ -58,43 +146,43 @@ export const authService = {
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
     if (authError || !user) return null;
 
+    const ctx = tenantContext.get();
+    
     const { data: profile, error } = await supabaseClient
       .from('profiles')
-      .select('*, companies(*)')
+      .select('*')
       .eq('id', user.id)
       .single();
 
     if (error) {
-      if (error.code === 'PGRST116') return null; // Profile not found is acceptable for new users
-      throw error; // Rethrow real errors (network, RLS, etc.)
+      if (error.code === 'PGRST116') return null;
+      throw error;
+    }
+
+    // Fetch company details if context exists
+    let companyData = null;
+    if (ctx?.company_id) {
+      const { data: company } = await supabaseClient
+        .from('companies')
+        .select('*')
+        .eq('id', ctx.company_id)
+        .single();
+      companyData = company;
     }
 
     return {
       ...profile,
+      company_id: ctx?.company_id || profile.company_id,
+      outlet_id: ctx?.outlet_id || profile.outlet_id,
       email: user.email,
-      user_id: profile.id // for backward compatibility with tenantContext
+      user_id: profile.id,
+      role: ctx?.role || profile.role,
+      companies: companyData || profile.companies
     };
   },
 
   async createCompany(name: string, passedUser?: any) {
-    const user = passedUser || await this.getCurrentUser();
-    if (!user) throw new Error("Unauthorized");
-
-    const { data: company, error: cError } = await supabaseClient
-      .from('companies')
-      .insert({ name, owner_id: user.id })
-      .select().single();
-
-    if (cError) throw cError;
-
-    const { error: pError } = await supabaseClient.from('profiles').upsert({ 
-      id: user.id,
-      company_id: company.id, 
-      role: 'OWNER'
-    });
-
-    if (pError) throw pError;
-    return company;
+    return companyService.createCompany(name);
   }
 };
 

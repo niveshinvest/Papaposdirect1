@@ -197,10 +197,22 @@ export const purchaseService = {
     return data;
   },
 
-  async updateProcurementOrder(id: string, updates: any, items: any[]) {
+  async updateProcurementOrder(id: string, updates: any, items: any[], outletId?: string) {
     const client = getSupabase();
     if (!client) throw new Error("Database connection required");
     const { company_id } = await tenantContext.require();
+
+    let resolvedOutletId = outletId;
+    if (!resolvedOutletId) {
+      const { data: order } = await client
+        .from('procurement_orders')
+        .select('outlet_id')
+        .eq('id', id)
+        .single();
+      resolvedOutletId = order?.outlet_id;
+    }
+
+    if (!resolvedOutletId) throw new Error("Outlet ID is required for updating procurement items");
 
     // 1. Update Order
     const { error: poErr } = await client
@@ -219,7 +231,8 @@ export const purchaseService = {
     const newItems = items.map(item => ({
       ...item,
       purchase_order_id: id,
-      company_id
+      company_id,
+      outlet_id: resolvedOutletId
     }));
 
     const { error: itemsErr } = await client.from('purchase_items').insert(newItems);

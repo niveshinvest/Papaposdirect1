@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 052: AI LEGAL DEFENSE & EXPLAINABILITY
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. EXTEND INSIGHTS
 ALTER TABLE public.ai_insights 
 ADD COLUMN IF NOT EXISTS explanation_object JSONB DEFAULT '{}'::jsonb,
@@ -38,5 +36,3 @@ CREATE TABLE IF NOT EXISTS public.ai_execution_registry (
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (52, 'ai_defense_explainability_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

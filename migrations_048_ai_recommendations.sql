@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 048: AI AUTO-RECOMMENDATIONS
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. ENUMS
 DO $$ BEGIN
     CREATE TYPE recommendation_type AS ENUM ('PRICING', 'MENU', 'STAFFING');
@@ -66,5 +64,3 @@ CREATE INDEX IF NOT EXISTS idx_ai_reco_type ON public.ai_recommendations(type);
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (48, 'ai_auto_recommendations_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

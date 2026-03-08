@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 055: REAL-TIME REPORTING & WHATSAPP CONFIG
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. WHATSAPP CONFIGURATION ON COMPANIES
 ALTER TABLE public.companies 
 ADD COLUMN IF NOT EXISTS whatsapp_config JSONB DEFAULT '{
@@ -25,5 +23,3 @@ ON public.invoice_items (invoice_id);
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (55, 'live_reporting_foundations_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;
