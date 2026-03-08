@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Re-applies hardened policies now that columns physically exist.
 
-BEGIN;
-
 -- Using security helper public.get_my_company_id() to break recursion
 DO $$ 
 DECLARE 
@@ -29,5 +27,3 @@ END $$;
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (27, 'hardened_rls_recovery')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

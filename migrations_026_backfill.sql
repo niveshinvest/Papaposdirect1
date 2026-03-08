@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Syncs child identity with parent identity and enforces data integrity.
 
-BEGIN;
-
 -- 1. BACKFILL SALES ITEMS FROM ORDERS
 UPDATE public.order_items oi
 SET company_id = o.company_id, outlet_id = o.outlet_id
@@ -43,5 +41,3 @@ CREATE INDEX IF NOT EXISTS idx_delivery_items_tenant ON public.delivery_order_it
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (26, 'identity_backfill_enforcement')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

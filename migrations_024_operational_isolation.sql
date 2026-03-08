@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Adds outlet_id and company_id to all operational tables with hardened RLS.
 
-BEGIN;
-
 -- 1. MENU MODULE ISOLATION
 ALTER TABLE public.menu_categories ADD COLUMN IF NOT EXISTS outlet_id TEXT REFERENCES public.outlets(id);
 ALTER TABLE public.menu_items ADD COLUMN IF NOT EXISTS outlet_id TEXT REFERENCES public.outlets(id);
@@ -48,5 +46,3 @@ CREATE INDEX IF NOT EXISTS idx_orders_outlet_v2 ON public.orders(outlet_id);
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (24, 'operational_isolation_v2')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

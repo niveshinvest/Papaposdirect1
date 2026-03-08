@@ -114,8 +114,8 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
       const { data, error } = await getSupabase()
         .from('payment_modes')
         .select('*')
-        .eq('outlet_id', activeOutlet.id)
-        .order('priority_order');
+        .eq('outlet_id', activeOutlet.id);
+        //.order('priority_order');
       if (!error) setPaymentModes(data || []);
     } finally {
       setLoading(false);

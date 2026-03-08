@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Reason: Fix ERROR 23502 (NOT NULL violation) in customers table and reinforce strict multi-tenant RLS.
 
-BEGIN;
-
 -- ==========================================
 -- 1. SCHEMA ALIGNMENT
 -- ==========================================
@@ -93,5 +91,3 @@ CREATE INDEX IF NOT EXISTS idx_customers_tenant_repair ON public.customers(compa
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (32, 'customers_tenant_repair_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

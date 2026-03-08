@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Purpose: Enforce outlet isolation for categories and mandatory links for items.
 
-BEGIN;
-
 -- 1. CLEANUP & ALIGNMENT FOR MENU CATEGORIES
 -- Add outlet_id if missing (Note: outlets.id is TEXT in our schema)
 ALTER TABLE public.menu_categories ADD COLUMN IF NOT EXISTS outlet_id TEXT REFERENCES public.outlets(id);
@@ -40,5 +38,3 @@ WITH CHECK (company_id = public.get_my_company_id());
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (30, 'menu_category_outlet_isolation_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

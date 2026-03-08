@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Resolves "infinite recursion detected" by using a security definer function.
 
-BEGIN;
-
 -- 1. Create a helper function that bypasses RLS
 -- This function runs as the owner (postgres), breaking the recursion loop.
 CREATE OR REPLACE FUNCTION public.get_my_company_id()
@@ -33,5 +31,3 @@ USING (
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (22, 'fix_profiles_recursion_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

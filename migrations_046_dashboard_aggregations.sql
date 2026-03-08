@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 046: DASHBOARD LIVE AGGREGATIONS
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. COMPREHENSIVE BUSINESS SUMMARY RPC
 CREATE OR REPLACE FUNCTION public.get_business_summary(
     p_company_id UUID,
@@ -64,5 +62,3 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (46, 'dashboard_live_aggregations_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

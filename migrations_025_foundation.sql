@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Fixes: "column company_id does not exist" in line-item and log tables.
 
-BEGIN;
-
 -- 1. SALES LINE ITEMS
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES public.companies(id);
 ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS outlet_id TEXT REFERENCES public.outlets(id);
@@ -25,5 +23,3 @@ ALTER TABLE public.kitchen_status_logs ADD COLUMN IF NOT EXISTS outlet_id TEXT R
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (25, 'operational_foundation_columns')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

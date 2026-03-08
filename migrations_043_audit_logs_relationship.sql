@@ -30,7 +30,6 @@ AND column_name IN ('actor_user_id', 'id')
 AND table_schema = 'public';
 
 -- SECTION 2: SQL to add foreign key constraint
-BEGIN;
   -- Clean up any legacy keys
   ALTER TABLE public.audit_logs DROP CONSTRAINT IF EXISTS audit_logs_user_id_fkey;
   ALTER TABLE public.audit_logs DROP CONSTRAINT IF EXISTS audit_logs_actor_user_id_fkey;
@@ -41,7 +40,6 @@ BEGIN;
   FOREIGN KEY (actor_user_id) 
   REFERENCES public.profiles(id) 
   ON DELETE SET NULL;
-COMMIT;
 
 -- SECTION 3: SQL to reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';

@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 039: ENTERPRISE STAFF & AUDIT
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. ENUMS
 DO $$ BEGIN
     CREATE TYPE staff_status AS ENUM ('invited', 'active', 'disabled');
@@ -118,5 +116,3 @@ $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (39, 'staff_rbac_lifecycle_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

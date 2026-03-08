@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Reason: Fix missing company_id and outlet_id columns in the base 'inventory' table to enable strict RLS.
 
-BEGIN;
-
 -- ==========================================
 -- 1. SCHEMA ALIGNMENT
 -- ==========================================
@@ -91,5 +89,3 @@ CREATE INDEX IF NOT EXISTS idx_inventory_tenant_repair ON public.inventory(compa
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (31, 'inventory_tenant_repair_v2')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

@@ -4,8 +4,6 @@
 -- Reason: Fix inconsistency where inventory.outlet_id was created as UUID while the rest of the system uses TEXT.
 -- Impact: Prevents JOIN failures and RLS comparison errors with the outlets table.
 
-BEGIN;
-
 -- ==========================================
 -- 1. SCHEMA VERIFICATION & LOGGING
 -- ==========================================
@@ -79,5 +77,3 @@ WITH CHECK (company_id = public.get_my_company_id());
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (35, 'inventory_outlet_id_type_fix_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

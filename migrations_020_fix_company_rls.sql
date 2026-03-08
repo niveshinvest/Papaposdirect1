@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Allows authenticated users to create their first company record.
 
-BEGIN;
-
 -- 1. Ensure RLS enabled
 ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
 
@@ -36,5 +34,3 @@ CREATE POLICY "Users can see their own company" ON public.companies
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (20, 'fix_company_creation_rls_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

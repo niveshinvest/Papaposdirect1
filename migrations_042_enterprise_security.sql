@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 042: ENTERPRISE TERMINAL & SESSION GOVERNANCE
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. TERMINAL REGISTRY
 CREATE TYPE terminal_status AS ENUM ('PENDING_APPROVAL', 'APPROVED', 'SUSPENDED', 'REVOKED');
 
@@ -97,5 +95,3 @@ CREATE POLICY "Management Fleet Control" ON public.terminals
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (42, 'enterprise_pos_fleet_governance_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

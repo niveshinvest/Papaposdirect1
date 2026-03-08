@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 041: HR COMPLIANCE STAFF LIFECYCLE JOURNAL
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. COMPLIANCE HISTORY TABLE (APPEND-ONLY)
 CREATE TABLE IF NOT EXISTS public.staff_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -59,5 +57,3 @@ CREATE INDEX IF NOT EXISTS idx_staff_history_company ON public.staff_history(com
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (41, 'staff_hr_compliance_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

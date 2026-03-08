@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Rule: First terminal for a new company is auto-approved ONLY if the user is the OWNER.
 
-BEGIN;
-
 -- Update the handshake function to implement one-time auto-approval logic
 CREATE OR REPLACE FUNCTION public.pos_terminal_handshake(
     p_terminal_id TEXT,
@@ -109,5 +107,3 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (44, 'auto_approve_first_owner_terminal_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

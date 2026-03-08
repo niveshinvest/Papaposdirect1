@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 038: INDIAN GST COMPLIANCE CORE
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. EXTEND MASTER DATA TABLES
 ALTER TABLE public.outlets 
 ADD COLUMN IF NOT EXISTS short_code TEXT UNIQUE,
@@ -129,5 +127,3 @@ CREATE TRIGGER tr_lock_invoices
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (38, 'gst_compliance_india_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

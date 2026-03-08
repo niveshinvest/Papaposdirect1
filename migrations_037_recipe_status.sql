@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 037: RECIPE WORKFLOW
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. ADD STATUS COLUMN
 ALTER TABLE public.recipes 
 ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'manual' 
@@ -20,4 +18,3 @@ INSERT INTO public.schema_migrations (version, name)
 VALUES (37, 'recipe_workflow_status_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
 
-COMMIT;

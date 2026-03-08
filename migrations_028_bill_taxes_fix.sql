@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 028: BILL_TAXES REPAIR BUNDLE
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. SCHEMA FOUNDATION
 ALTER TABLE public.bill_taxes ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES public.companies(id);
 ALTER TABLE public.bill_taxes ADD COLUMN IF NOT EXISTS outlet_id TEXT REFERENCES public.outlets(id);
@@ -32,5 +30,3 @@ WITH CHECK (company_id = public.get_my_company_id());
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (28, 'bill_taxes_repair_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

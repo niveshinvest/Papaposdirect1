@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Allows users to manage their own profile record, essential for linking to a company.
 
-BEGIN;
-
 -- 1. Ensure RLS enabled
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
@@ -42,5 +40,3 @@ WITH CHECK (id = auth.uid());
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (21, 'fix_profile_management_rls_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Supports modern connection types and multi-role (Bill/KOT) assignment.
 
-BEGIN;
-
 -- 1. Create specialized printer type
 DO $$ BEGIN
     CREATE TYPE printer_connection_type AS ENUM ('bluetooth', 'wifi', 'wired');
@@ -54,5 +52,3 @@ CREATE INDEX IF NOT EXISTS idx_printers_registry_roles ON public.printers_regist
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (36, 'printer_registry_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

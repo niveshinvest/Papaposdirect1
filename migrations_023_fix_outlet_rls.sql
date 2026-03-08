@@ -3,8 +3,6 @@
 -- Target: Supabase / Postgres
 -- Description: Corrects the multi-tenant isolation for outlets.
 
-BEGIN;
-
 -- 1. Update Outlets Policy
 DROP POLICY IF EXISTS "Tenant Access Outlets" ON public.outlets;
 CREATE POLICY "Tenant Access Outlets" ON public.outlets
@@ -37,5 +35,3 @@ CREATE POLICY "Tenant Access Outlet GST" ON public.outlet_gst
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (23, 'fix_outlet_rls_v2')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

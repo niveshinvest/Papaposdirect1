@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 040: STRICT SESSION CONTROL
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. SESSION REGISTRY
 CREATE TABLE IF NOT EXISTS public.staff_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -104,5 +102,3 @@ CREATE POLICY "Config Visibility" ON public.session_configs
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (40, 'strict_session_control_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;

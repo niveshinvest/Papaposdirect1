@@ -2,8 +2,6 @@
 -- PAPAPOS MIGRATION 029: MENU ITEMS AUDIT & IDENTITY
 -- Target: Supabase / Postgres
 
-BEGIN;
-
 -- 1. ADD AUDIT COLUMNS
 ALTER TABLE public.menu_items ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES public.profiles(id);
 
@@ -27,5 +25,3 @@ WITH CHECK (company_id = public.get_my_company_id());
 INSERT INTO public.schema_migrations (version, name) 
 VALUES (29, 'menu_items_audit_v1')
 ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;
-
-COMMIT;
