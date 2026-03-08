@@ -42,8 +42,6 @@ const AVAILABLE_MIGRATIONS = [
   { version: 30, file: 'migrations_030_menu_refinement.sql' },
   { version: 31, file: 'migrations_031_inventory_repair.sql' },
   { version: 32, file: 'migrations_032_customers_repair.sql' },
-  { version: 33, file: 'migrations_033_customers_null_recovery.sql' },
-  { version: 34, file: 'migrations_034_customers_outlet_null_recovery.sql' },
   { version: 35, file: 'migrations_035_inventory_type_fix.sql' },
   { version: 36, file: 'migrations_036_printer_registry.sql' },
   { version: 37, file: 'migrations_037_recipe_status.sql' },
@@ -88,7 +86,9 @@ const AVAILABLE_MIGRATIONS = [
   { version: 76, file: 'migrations_076_ai_providers.sql' },
   { version: 77, file: 'migrations_077_ai_ros.sql' },
   { version: 78, file: 'migrations_078_multi_tenant_fix.sql' },
-  { version: 79, file: 'migrations_079_fix_recursion.sql' }
+  { version: 79, file: 'migrations_079_fix_recursion.sql' },
+  { version: 80, file: 'migrations_080_staff_sessions_unique_index.sql' },
+  { version: 81, file: 'migrations_081_fix_staff_history_actor.sql' }
 ];
 
 export const getDatabaseVersion = async (): Promise<MigrationStatus> => {
