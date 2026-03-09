@@ -88,7 +88,9 @@ const AVAILABLE_MIGRATIONS = [
   { version: 78, file: 'migrations_078_multi_tenant_fix.sql' },
   { version: 79, file: 'migrations_079_fix_recursion.sql' },
   { version: 80, file: 'migrations_080_staff_sessions_unique_index.sql' },
-  { version: 81, file: 'migrations_081_fix_staff_history_actor.sql' }
+  { version: 81, file: 'migrations_081_fix_staff_history_actor.sql' },
+  { version: 82, file: 'migrations_082_fix_profiles_recursion_v3.sql' },
+  { version: 83, file: 'migrations_083_fix_inventory_relationships.sql' }
 ];
 
 export const getDatabaseVersion = async (): Promise<MigrationStatus> => {
