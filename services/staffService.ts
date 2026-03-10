@@ -133,6 +133,28 @@ export const staffService = {
     return data || [];
   },
 
+  async adminResetPassword(userId: string, newPassword?: string) {
+    const supabase = getSupabase();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Unauthorized");
+
+    const endpoint = newPassword ? '/api/admin/reset-user-password' : '/api/admin/send-reset-link';
+    const body = newPassword ? { user_id: userId, new_password: newPassword } : { user_id: userId };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Failed to reset password");
+    return result;
+  },
+
   async verifyOnboardingToken(token: string) {
     const client = getSupabase();
     const { data, error } = await client

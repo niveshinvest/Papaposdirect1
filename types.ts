@@ -531,3 +531,13 @@ export interface AuditLog {
   metadata?: any;
   timestamp: Date;
 }
+
+export interface SecurityLog {
+  id: string;
+  company_id: string;
+  actor_user_id: string;
+  target_user_id: string;
+  action: string;
+  metadata?: any;
+  created_at: Date;
+}

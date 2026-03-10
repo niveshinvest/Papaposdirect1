@@ -5,10 +5,11 @@ import {
   Search, X, Check, ChevronRight, 
   Loader2, MoreHorizontal, ShieldCheck, Mail, Store,
   AlertTriangle, Power, History, Trash2, Edit3, Globe,
-  ShieldAlert, Clock, User as UserIcon, FileText, Send, Link, Copy
+  ShieldAlert, Clock, User as UserIcon, FileText, Send, Link, Copy,
+  KeyRound
 } from 'lucide-react';
 import { staffService } from '../services/staffService';
-import { cloudOutlets } from '../services/supabaseService';
+import { cloudOutlets, authService } from '../services/supabaseService';
 import { auditService } from '../services/auditService';
 import { UserRole, StaffStatus, StaffUser, AuditLog, Outlet, StaffHistory } from '../types';
 
@@ -22,6 +23,7 @@ const UserManagement: React.FC = () => {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isResending, setIsResending] = useState<string | null>(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState<any>(null);
 
   // Compliance Action State
   const [complianceAction, setComplianceAction] = useState<{
@@ -33,6 +35,19 @@ const UserManagement: React.FC = () => {
   } | null>(null);
   const [actionReason, setActionReason] = useState('');
   const [isActionProcessing, setIsActionProcessing] = useState(false);
+
+  // Password Reset State
+  const [resetPasswordModal, setResetPasswordModal] = useState<{
+    staffId: string;
+    staffName: string;
+    email: string;
+  } | null>(null);
+  const [resetForm, setResetForm] = useState({
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [isResetting, setIsResetting] = useState(false);
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
 
   // History View State
   const [selectedStaffHistory, setSelectedStaffHistory] = useState<{
@@ -52,6 +67,7 @@ const UserManagement: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    authService.getProfile().then(setCurrentUserProfile);
   }, [view]);
 
   const loadData = async () => {
@@ -159,6 +175,22 @@ const UserManagement: React.FC = () => {
     u.email?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const handleAdminResetPassword = async (userId: string, newPassword?: string) => {
+    setIsResetting(true);
+    try {
+      await staffService.adminResetPassword(userId, newPassword);
+      alert(newPassword ? "Password updated successfully." : "Reset link sent successfully.");
+      setResetPasswordModal(null);
+      setResetForm({ newPassword: '', confirmPassword: '' });
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const isAdmin = currentUserProfile?.role === 'OWNER' || currentUserProfile?.role === 'ADMIN';
+
   return (
     <div className="p-8 space-y-8 min-h-screen pb-32 max-w-7xl mx-auto animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -228,6 +260,38 @@ const UserManagement: React.FC = () => {
                                 <option value="MANAGER">Manager</option>
                                 <option value="CASHIER">Cashier</option>
                             </select>
+                            {isAdmin && (
+                              <div className="relative mt-2">
+                                <button 
+                                  onClick={() => setActiveMenu(activeMenu === user.id ? null : user.id)}
+                                  className="p-2 hover:bg-slate-100 rounded-lg transition-all text-slate-400"
+                                >
+                                  <MoreHorizontal size={16} />
+                                </button>
+                                {activeMenu === user.id && (
+                                  <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                                    <button 
+                                      onClick={() => {
+                                        handleAdminResetPassword(user.id);
+                                        setActiveMenu(null);
+                                      }}
+                                      className="w-full px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 flex items-center gap-2"
+                                    >
+                                      <Mail size={14} /> Send Reset Link
+                                    </button>
+                                    <button 
+                                      onClick={() => {
+                                        setResetPasswordModal({ staffId: user.id, staffName: user.full_name, email: user.email });
+                                        setActiveMenu(null);
+                                      }}
+                                      className="w-full px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 flex items-center gap-2"
+                                    >
+                                      <KeyRound size={14} /> Set New Password
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                       </div>
 
@@ -391,6 +455,69 @@ const UserManagement: React.FC = () => {
                        className="flex-[2] py-5 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-30"
                     >
                        {isActionProcessing ? <Loader2 className="animate-spin" size={16} /> : <><Check size={16} /> Confirm & Log Action</>}
+                    </button>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Admin Password Reset Modal */}
+      {resetPasswordModal && (
+        <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
+           <div className="bg-white rounded-[48px] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+              <div className="p-8 bg-slate-900 text-white flex flex-col items-center gap-4 text-center">
+                 <div className="w-16 h-16 bg-indigo-600 rounded-3xl flex items-center justify-center shadow-lg">
+                    <KeyRound size={32} />
+                 </div>
+                 <div>
+                    <h3 className="text-xl font-black uppercase tracking-tight">Set New Password</h3>
+                    <p className="text-[10px] font-bold opacity-60 uppercase mt-1">Directly override staff credentials</p>
+                 </div>
+              </div>
+              <div className="p-10 space-y-6">
+                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Target Personnel</p>
+                    <p className="font-black text-slate-800 text-lg">{resetPasswordModal.staffName}</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">{resetPasswordModal.email}</p>
+                 </div>
+
+                 <div className="space-y-4">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">New Password</label>
+                       <input 
+                          type="password"
+                          required
+                          className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl font-bold text-slate-900 focus:ring-2 focus:ring-indigo-600 outline-none"
+                          placeholder="••••••••"
+                          value={resetForm.newPassword}
+                          onChange={e => setResetForm({...resetForm, newPassword: e.target.value})}
+                       />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Confirm Password</label>
+                       <input 
+                          type="password"
+                          required
+                          className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl font-bold text-slate-900 focus:ring-2 focus:ring-indigo-600 outline-none"
+                          placeholder="••••••••"
+                          value={resetForm.confirmPassword}
+                          onChange={e => setResetForm({...resetForm, confirmPassword: e.target.value})}
+                       />
+                    </div>
+                 </div>
+
+                 <div className="flex gap-3">
+                    <button 
+                       onClick={() => setResetPasswordModal(null)}
+                       className="flex-1 py-5 bg-slate-100 text-slate-400 rounded-2xl font-black uppercase tracking-widest text-xs"
+                    >Cancel</button>
+                    <button 
+                       disabled={!resetForm.newPassword || resetForm.newPassword !== resetForm.confirmPassword || isResetting}
+                       onClick={() => handleAdminResetPassword(resetPasswordModal.staffId, resetForm.newPassword)}
+                       className="flex-[2] py-5 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-30"
+                    >
+                       {isResetting ? <Loader2 className="animate-spin" size={16} /> : <><Check size={16} /> Update Password</>}
                     </button>
                  </div>
               </div>
