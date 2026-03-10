@@ -107,6 +107,12 @@ export const companyService = {
 
     if (cuError) throw cuError;
 
+    // Update user profile with the new company_id
+    await supabaseClient
+      .from('profiles')
+      .update({ company_id: company.id })
+      .eq('id', user.id);
+
     // Create default outlet
     await supabaseClient.from('outlets').insert({
       id: `main-${company.id.slice(0, 8)}`,

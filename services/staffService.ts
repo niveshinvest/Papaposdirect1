@@ -15,9 +15,14 @@ export const staffService = {
   }) {
     const client = getSupabase();
     const profile = await authService.getProfile();
+    const company_id = profile?.company_id;
     
     if (!profile || !['OWNER', 'ADMIN'].includes(profile.role)) {
       throw new Error("Unauthorized: Only Owners or Admins can invite staff.");
+    }
+
+    if (!company_id) {
+      throw new Error("Tenant context missing: Please select a company before inviting staff.");
     }
 
     if (!payload.reason) throw new Error("Compliance Error: Reason for invitation is mandatory.");
@@ -29,7 +34,7 @@ export const staffService = {
         email: payload.email,
         full_name: payload.full_name,
         role: payload.role,
-        company_id: profile.company_id,
+        company_id: company_id,
         outlet_ids: payload.outlet_ids,
         status: 'invited',
         is_verified: false,
@@ -57,7 +62,7 @@ export const staffService = {
 
       if (emailError) {
         // Mark as pending if email failed so admin knows they need to retry
-        await client.from('staff_users').upsert({ id: staff.id, status: 'invited', updated_at: new Date().toISOString() });
+        await client.from('staff_users').update({ status: 'invited', updated_at: new Date().toISOString() }).eq('id', staff.id);
         throw new Error("Staff added but invite email failed. Retry required.");
       }
     } catch (e) {
@@ -68,7 +73,7 @@ export const staffService = {
 
     // 3. Log Audit Trail
     await client.from('staff_history').insert({
-      company_id: profile.company_id,
+      company_id: company_id,
       staff_id: staff.id,
       actor_id: profile.id,
       event_type: 'STATUS_CHANGE',
@@ -116,7 +121,7 @@ export const staffService = {
   async fetchStaff() {
     const client = getSupabase();
     const profile = await authService.getProfile();
-    if (!profile) return [];
+    if (!profile || !profile.company_id) return [];
 
     const { data, error } = await client
       .from('staff_users')
@@ -183,6 +188,9 @@ export const staffService = {
     if (!profile || !['OWNER', 'ADMIN'].includes(profile.role)) {
       throw new Error("Unauthorized: Only Owners or Admins can modify roles.");
     }
+    if (!profile.company_id) {
+      throw new Error("Tenant context missing: Please select a company.");
+    }
     if (!reason) throw new Error("Compliance Error: Reason for role change is mandatory.");
 
     const { data: oldStaff, error: fetchError } = await client
@@ -194,7 +202,8 @@ export const staffService = {
 
     const { error: updateError } = await client
       .from('staff_users')
-      .upsert({ id: staffId, role, updated_at: new Date().toISOString() });
+      .update({ role, updated_at: new Date().toISOString() })
+      .eq('id', staffId);
 
     if (updateError) throw new Error(updateError.message);
 
@@ -219,6 +228,9 @@ export const staffService = {
     if (!profile || !['OWNER', 'ADMIN'].includes(profile.role)) {
       throw new Error("Unauthorized: Only Owners or Admins can modify outlet access.");
     }
+    if (!profile.company_id) {
+      throw new Error("Tenant context missing: Please select a company.");
+    }
     if (!reason) throw new Error("Compliance Error: Reason for outlet scope change is mandatory.");
 
     const { data: oldStaff, error: fetchError } = await client
@@ -230,7 +242,8 @@ export const staffService = {
 
     const { error: updateError } = await client
       .from('staff_users')
-      .upsert({ id: staffId, outlet_ids: outletIds, updated_at: new Date().toISOString() });
+      .update({ outlet_ids: outletIds, updated_at: new Date().toISOString() })
+      .eq('id', staffId);
 
     if (updateError) throw new Error(updateError.message);
 
@@ -250,6 +263,9 @@ export const staffService = {
     const client = getSupabase();
     const profile = await authService.getProfile();
     if (!profile || !['OWNER', 'ADMIN'].includes(profile.role)) throw new Error("Unauthorized");
+    if (!profile.company_id) {
+      throw new Error("Tenant context missing: Please select a company.");
+    }
     if (!reason) throw new Error("Compliance Error: Reason for status change is mandatory.");
 
     const { data: oldStaff, error: fetchError } = await client.from('staff_users').select('status').eq('id', staffId).single();
@@ -257,7 +273,8 @@ export const staffService = {
 
     const { error } = await client
       .from('staff_users')
-      .upsert({ id: staffId, status, updated_at: new Date().toISOString() });
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', staffId);
 
     if (error) throw new Error(error.message);
 

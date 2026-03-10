@@ -185,6 +185,14 @@ const AppContent: FC = () => {
 
   const handleTenantComplete = async (company: Company, outlet: Outlet, role: string) => {
     tenantContext.set(company.id, outlet.id, role);
+    
+    // Safety: Ensure profile has company_id set in DB for legacy/RLS consistency
+    const supabase = getSupabase();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase.from('profiles').update({ company_id: company.id }).eq('id', user.id);
+    }
+
     await bootSequence();
   };
 
@@ -262,6 +270,7 @@ const AppContent: FC = () => {
         <Route path="/" element={<LandingPage onLogin={() => navigate('/auth')} onGetStarted={() => navigate('/signup')} />} />
         <Route path="/auth" element={<Auth type="login" onCancel={() => navigate('/')} onAuthenticated={bootSequence} />} />
         <Route path="/signup" element={<Auth type="signup" onCancel={() => navigate('/')} onAuthenticated={bootSequence} />} />
+        <Route path="/auth/reset-password" element={<Auth type="reset-password" onCancel={() => navigate('/auth')} onAuthenticated={bootSequence} />} />
         
         <Route path="/onboarding/:token" element={<StaffOnboarding />} />
 

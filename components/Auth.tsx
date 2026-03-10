@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Mail, Lock, User, Store, ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
+import { X, Mail, Lock, User, Store, ArrowRight, Loader2, ShieldCheck, KeyRound } from 'lucide-react';
 import { SubscriptionPlan, Organization, User as UserType } from '../types';
 import { getSupabase, authService } from '../services/supabaseService';
 
@@ -9,14 +9,16 @@ interface AuthProps {
   initialPlan?: SubscriptionPlan;
   onAuthenticated: (org: Organization, user: UserType) => void;
   onCancel: () => void;
-  type: 'login' | 'signup';
+  type: 'login' | 'signup' | 'reset-password';
 }
 
 const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
   const navigate = useNavigate();
   const [step, setStep] = useState<'details' | 'org'>('details');
+  const [mode, setMode] = useState<'auth' | 'forgot-password'>(type === 'reset-password' ? 'auth' : 'auth');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -25,11 +27,66 @@ const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
     restaurantName: '',
   });
 
+  useEffect(() => {
+    if (type === 'reset-password') {
+      const handleResetSession = async () => {
+        setIsLoading(true);
+        try {
+          const supabase = getSupabase();
+          const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+          if (error) throw error;
+        } catch (err: any) {
+          setError("Reset link expired or invalid. Please request a new one.");
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      handleResetSession();
+    }
+  }, [type]);
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccessMessage(null);
     const supabase = getSupabase();
     if (!supabase) return;
+
+    if (mode === 'forgot-password') {
+      setIsLoading(true);
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(formData.email, {
+          redirectTo: `${window.location.origin}/#/auth/reset-password`
+        });
+        if (error) throw error;
+        setSuccessMessage("If the email exists, a reset link has been sent.");
+        setMode('auth');
+      } catch (err: any) {
+        // Return generic message even on error to avoid email enumeration
+        setSuccessMessage("If the email exists, a reset link has been sent.");
+        setMode('auth');
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    if (type === 'reset-password') {
+      setIsLoading(true);
+      try {
+        const { error } = await supabase.auth.updateUser({
+          password: formData.password
+        });
+        if (error) throw error;
+        alert("Password updated successfully.");
+        navigate('/auth');
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
 
     if (type === 'signup' && step === 'details') {
       setStep('org');
@@ -99,13 +156,44 @@ const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
           <div className="w-full max-w-md space-y-10">
             <div className="text-center space-y-3">
               <h3 className="text-4xl font-black tracking-tighter text-slate-900">
-                {type === 'signup' ? (step === 'details' ? 'Create Account' : 'Register Brand') : 'Authentication'}
+                {type === 'reset-password' ? 'Reset Password' : 
+                 mode === 'forgot-password' ? 'Recover Access' :
+                 type === 'signup' ? (step === 'details' ? 'Create Account' : 'Register Brand') : 'Authentication'}
               </h3>
               {error && <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-xs font-bold border border-red-100">{error}</div>}
+              {successMessage && <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl text-xs font-bold border border-emerald-100">{successMessage}</div>}
             </div>
 
             <form onSubmit={handleAuth} className="space-y-6">
-              {step === 'details' && (
+              {mode === 'forgot-password' ? (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Registered Email</label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input 
+                      type="email" required
+                      className="w-full pl-12 pr-4 py-4 bg-gray-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-orange-500 outline-none text-slate-900" 
+                      placeholder="staff@restaurant.com"
+                      value={formData.email}
+                      onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    />
+                  </div>
+                </div>
+              ) : type === 'reset-password' ? (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">New Secure Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input 
+                      type="password" required
+                      className="w-full pl-12 pr-4 py-4 bg-gray-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-orange-500 outline-none text-slate-900" 
+                      placeholder="••••••••"
+                      value={formData.password}
+                      onChange={(e) => setFormData({...formData, password: e.target.value})}
+                    />
+                  </div>
+                </div>
+              ) : step === 'details' && (
                 <>
                   {type === 'signup' && (
                     <div className="space-y-2">
@@ -135,7 +223,18 @@ const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Secure Password</label>
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Secure Password</label>
+                      {type === 'login' && (
+                        <button 
+                          type="button"
+                          onClick={() => setMode('forgot-password')}
+                          className="text-[10px] font-black text-orange-600 uppercase tracking-widest hover:underline"
+                        >
+                          Forgot Password?
+                        </button>
+                      )}
+                    </div>
                     <div className="relative">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                       <input 
@@ -149,7 +248,7 @@ const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
                 </>
               )}
 
-              {step === 'org' && (
+              {step === 'org' && mode === 'auth' && type === 'signup' && (
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Brand / Restaurant Name</label>
                   <div className="relative">
@@ -169,9 +268,23 @@ const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
                 disabled={isLoading}
                 className="w-full py-5 bg-slate-900 text-white rounded-[24px] font-black uppercase tracking-widest text-sm shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all"
               >
-                {isLoading ? <Loader2 className="animate-spin" size={24} /> : (step === 'details' && type === 'signup' ? 'Continue' : `Secure Login`)}
+                {isLoading ? <Loader2 className="animate-spin" size={24} /> : (
+                  type === 'reset-password' ? 'Update Password' :
+                  mode === 'forgot-password' ? 'Send Reset Link' :
+                  step === 'details' && type === 'signup' ? 'Continue' : `Secure Login`
+                )}
                 {!isLoading && <ArrowRight size={18} />}
               </button>
+
+              {mode === 'forgot-password' && (
+                <button 
+                  type="button"
+                  onClick={() => setMode('auth')}
+                  className="w-full text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors"
+                >
+                  Back to Login
+                </button>
+              )}
             </form>
           </div>
         </div>
