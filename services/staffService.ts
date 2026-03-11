@@ -169,20 +169,30 @@ export const staffService = {
     return data;
   },
 
-  async completeOnboarding(token: string, password: string, pin: string) {
+  async completeOnboarding(token: string, email: string, password: string, pin: string, fullName: string) {
     const client = getSupabase();
     
-    // First, complete the profile data via RPC
+    // 1. Create the Auth User
+    const { data: authData, error: authError } = await client.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullName }
+      }
+    });
+
+    if (authError) throw authError;
+
+    // 2. Complete the profile data via RPC
+    // This transitions staff_users status to 'active' and sets the PIN
     const { data, error: rpcError } = await client.rpc('complete_staff_onboarding', {
         p_token: token,
-        p_new_password: password, // In production, this would also trigger a supabase auth update
+        p_new_password: password, 
         p_pos_pin: pin
     });
 
     if (rpcError) throw rpcError;
 
-    // Second, update the Auth user's password (this requires the user to be signed in or admin access)
-    // For this flow, we assume the staff is using the token to set their credentials.
     return data;
   },
 

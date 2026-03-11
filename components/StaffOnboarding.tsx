@@ -50,7 +50,13 @@ const StaffOnboarding: React.FC = () => {
 
     setProcessing(true);
     try {
-      await staffService.completeOnboarding(token!, formData.password, formData.pin);
+      await staffService.completeOnboarding(
+        token!, 
+        staff.email, 
+        formData.password, 
+        formData.pin,
+        staff.full_name
+      );
       setStep('success');
     } catch (e: any) {
       alert(e.message);

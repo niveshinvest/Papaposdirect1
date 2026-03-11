@@ -121,23 +121,52 @@ async function startServer() {
     const adminProfile = (req as any).profile;
 
     try {
-      // Verify target user belongs to same company
-      const { data: targetProfile, error: targetError } = await adminSupabase
-        .from('profiles')
-        .select('company_id')
+      // 1. Try to find in staff_users first (since UserManagement uses staff_users.id)
+      let { data: staff, error: staffError } = await adminSupabase
+        .from('staff_users')
+        .select('email, company_id')
         .eq('id', user_id)
-        .single();
+        .maybeSingle();
 
-      if (targetError || !targetProfile) {
+      let targetEmail = staff?.email;
+      let targetCompanyId = staff?.company_id;
+
+      // 2. Fallback to profiles if not found in staff_users
+      if (!staff) {
+        const { data: profile, error: profileError } = await adminSupabase
+          .from('profiles')
+          .select('company_id')
+          .eq('id', user_id)
+          .maybeSingle();
+        
+        if (profile) {
+          targetCompanyId = profile.company_id;
+          // Get email from auth.admin
+          const { data: { user: authUser }, error: authError } = await adminSupabase.auth.admin.getUserById(user_id);
+          if (authUser) targetEmail = authUser.email;
+        }
+      }
+
+      if (!targetEmail || !targetCompanyId) {
         return res.status(404).json({ error: "Target user not found" });
       }
 
-      if (targetProfile.company_id !== adminProfile.company_id) {
+      if (targetCompanyId !== adminProfile.company_id) {
         return res.status(403).json({ error: "Forbidden: Cross-company operation rejected" });
       }
 
-      // Update password
-      const { error: updateError } = await adminSupabase.auth.admin.updateUserById(user_id, {
+      // 3. Find Auth User by Email
+      const { data: { users }, error: listError } = await adminSupabase.auth.admin.listUsers();
+      if (listError) throw listError;
+      
+      const authUser = (users as any[]).find(u => u.email === targetEmail);
+
+      if (!authUser) {
+        return res.status(400).json({ error: "User has not completed onboarding yet. They must use the invite link first." });
+      }
+
+      // 4. Update password
+      const { error: updateError } = await adminSupabase.auth.admin.updateUserById(authUser.id, {
         password: new_password
       });
 
@@ -147,9 +176,9 @@ async function startServer() {
       await adminSupabase.from('security_logs').insert({
         company_id: adminProfile.company_id,
         actor_user_id: adminUser.id,
-        target_user_id: user_id,
+        target_user_id: authUser.id,
         action: "PASSWORD_RESET",
-        metadata: { method: "DIRECT_SET" }
+        metadata: { method: "DIRECT_SET", staff_id: user_id }
       });
 
       res.json({ success: true });
@@ -165,35 +194,57 @@ async function startServer() {
     const adminProfile = (req as any).profile;
 
     try {
-      // Get user email and verify company
-      const { data: targetProfile, error: targetError } = await adminSupabase
-        .from('profiles')
+      // 1. Try to find in staff_users first
+      let { data: staff, error: staffError } = await adminSupabase
+        .from('staff_users')
         .select('email, company_id')
         .eq('id', user_id)
-        .single();
+        .maybeSingle();
 
-      if (targetError || !targetProfile) {
+      let targetEmail = staff?.email;
+      let targetCompanyId = staff?.company_id;
+
+      // 2. Fallback to profiles
+      if (!staff) {
+        const { data: profile, error: profileError } = await adminSupabase
+          .from('profiles')
+          .select('company_id')
+          .eq('id', user_id)
+          .maybeSingle();
+        
+        if (profile) {
+          targetCompanyId = profile.company_id;
+          const { data: { user: authUser }, error: authError } = await adminSupabase.auth.admin.getUserById(user_id);
+          if (authUser) targetEmail = authUser.email;
+        }
+      }
+
+      if (!targetEmail || !targetCompanyId) {
         return res.status(404).json({ error: "Target user not found" });
       }
 
-      if (targetProfile.company_id !== adminProfile.company_id) {
+      if (targetCompanyId !== adminProfile.company_id) {
         return res.status(403).json({ error: "Forbidden: Cross-company operation rejected" });
+      }
+
+      // 3. Find Auth User by Email
+      const { data: { users: usersList }, error: listError2 } = await adminSupabase.auth.admin.listUsers();
+      if (listError2) throw listError2;
+      
+      const authUser = (usersList as any[]).find(u => u.email === targetEmail);
+
+      if (!authUser) {
+        return res.status(400).json({ error: "User has not completed onboarding yet. They must use the invite link first." });
       }
 
       // Generate recovery link
       const { data, error: linkError } = await adminSupabase.auth.admin.generateLink({
         type: "recovery",
-        email: targetProfile.email
+        email: targetEmail
       });
 
       if (linkError) throw linkError;
 
-      // In a real app, you'd email this link. 
-      // Supabase generateLink returns the link, but doesn't send it automatically if you use generateLink.
-      // However, resetPasswordForEmail sends it. 
-      // generateLink is useful if you want to send it via your own email service.
-      // The prompt says "Email the link to the user".
-      
       // Log action
       await adminSupabase.from('security_logs').insert({
         company_id: adminProfile.company_id,
@@ -203,7 +254,7 @@ async function startServer() {
         metadata: { method: "RESET_LINK" }
       });
 
-      res.json({ success: true, message: "Reset link generated (and would be emailed in production)" });
+      res.json({ success: true, message: "Reset link generated" });
     } catch (error: any) {
       console.error("Admin Send Reset Link Error:", error);
       res.status(500).json({ error: error.message });
