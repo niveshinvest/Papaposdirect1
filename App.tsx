@@ -116,34 +116,59 @@ const AppContent: FC = () => {
 
   const bootSequence = async () => {
     setLoading(true);
+    console.log("Boot Engine: Initializing system sequence...");
     try {
       // Auto-run pending migrations
+      console.log("Boot Engine: Checking database version...");
       const status = await getDatabaseVersion();
+      console.log("Boot Engine: Database status:", status);
+      
       if (status.needsUpdate) {
-        console.log("Database update required. Applying pending migrations...");
+        console.log(`Boot Engine: Applying ${status.pendingVersions.length} pending migrations...`);
         for (const version of status.pendingVersions) {
           const fileName = getMigrationFile(version);
           if (fileName) {
-            const response = await fetch(`/${fileName}`);
-            const sql = await response.text();
-            await applyMigration(version, sql);
+            try {
+              console.log(`Boot Engine: Fetching migration ${version}: ${fileName}...`);
+              const response = await fetch(`${window.location.origin}/${fileName}?v=${Date.now()}`);
+              if (!response.ok) {
+                throw new Error(`HTTP ${response.status} for ${fileName}`);
+              }
+              const sql = await response.text();
+              if (!sql || sql.trim().length === 0) {
+                throw new Error(`Empty migration file: ${fileName}`);
+              }
+              console.log(`Boot Engine: Applying migration ${version}...`);
+              const result = await applyMigration(version, sql);
+              if (!result.success) {
+                throw new Error(`Migration ${version} failed: ${result.message}`);
+              }
+            } catch (fetchError: any) {
+              console.error(`Boot Engine: Migration ${version} failure:`, fetchError);
+              throw new Error(`Migration Pipeline Failure (${version}): ${fetchError.message}`);
+            }
           }
         }
         // Small delay to allow schema cache to refresh
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
 
+      console.log("Boot Engine: Verifying user identity...");
       const user = await authService.getCurrentUser();
       if (!user) {
+        console.log("Boot Engine: No active user session found.");
         setSelectionRequired(false);
         setLoading(false);
         return;
       }
 
+      console.log("Boot Engine: Resolving tenant context...");
       const ctx = tenantContext.get();
       if (ctx && ctx.company_id && ctx.outlet_id) {
+        console.log("Boot Engine: Fetching user profile...");
         const profile = await authService.getProfile();
         if (profile) {
+          console.log("Boot Engine: Profile resolved. Role:", profile.role);
           setAuthState({ user: profile, org: profile.companies });
           
           if (location.pathname === '/' || location.pathname === '/auth') {
@@ -154,20 +179,25 @@ const AppContent: FC = () => {
             }
           }
 
+          console.log("Boot Engine: Fetching outlet list...");
           const cloudList = await cloudOutlets.fetchAll();
           setOutlets(cloudList || []);
           
           const active = cloudList.find(o => o.id === ctx.outlet_id) || cloudList[0];
           if (active) {
+            console.log("Boot Engine: Performing terminal handshake for outlet:", active.id);
             setActiveOutlet(active);
             await sessionService.performHandshake(active.id);
+            console.log("Boot Engine: Starting sync engine...");
             syncService.start(profile);
           }
           setSelectionRequired(false);
         } else {
+          console.warn("Boot Engine: Profile not found for user.");
           setSelectionRequired(true);
         }
       } else {
+        console.log("Boot Engine: Tenant selection required.");
         setSelectionRequired(true);
       }
     } catch (e: any) {

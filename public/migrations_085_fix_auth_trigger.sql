@@ -38,3 +38,8 @@ BEGIN
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Record migration
+INSERT INTO public.schema_migrations (version, name) 
+VALUES (85, 'fix_auth_trigger_onboarding')
+ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;

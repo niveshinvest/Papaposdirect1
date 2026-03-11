@@ -418,7 +418,8 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
       const fileName = getMigrationFile(version);
       if (!fileName) throw new Error("Migration file not found in registry.");
       
-      const response = await fetch(`/${fileName}`);
+      const response = await fetch(`${window.location.origin}/${fileName}?v=${Date.now()}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${fileName}`);
       const sql = await response.text();
       
       const result = await applyMigration(version, sql);
