@@ -14,98 +14,67 @@ export const staffService = {
     reason: string;
   }) {
     const client = getSupabase();
-    const profile = await authService.getProfile();
-    const company_id = profile?.company_id;
+    const { data: { session } } = await client.auth.getSession();
     
-    if (!profile || !['OWNER', 'ADMIN'].includes(profile.role)) {
-      throw new Error("Unauthorized: Only Owners or Admins can invite staff.");
+    if (!session) {
+      throw new Error("Authentication required");
     }
 
-    if (!company_id) {
-      throw new Error("Tenant context missing: Please select a company before inviting staff.");
-    }
-
-    if (!payload.reason) throw new Error("Compliance Error: Reason for invitation is mandatory.");
-
-    // 1. Create the staff record with 'invited' status and a fresh token
-    const { data: staff, error: staffError } = await client
-      .from('staff_users')
-      .insert({
-        email: payload.email,
-        full_name: payload.full_name,
-        role: payload.role,
-        company_id: company_id,
-        outlet_ids: payload.outlet_ids,
-        status: 'invited',
-        is_verified: false,
-        created_by: profile.id
-      })
-      .select()
-      .single();
-
-    if (staffError) throw new Error(staffError.message);
-
-    // 2. Trigger the Email dispatch (Server-side Edge Function)
-    // We expect an Edge Function 'send-staff-invite' to handle SMTP logic
-    try {
-      const { error: emailError } = await client.functions.invoke('send-staff-invite', {
-        body: { 
-          staff_id: staff.id,
-          token: staff.invite_token,
-          company_name: profile.companies?.name,
-          role: payload.role,
-          recipient_email: payload.email,
-          recipient_name: payload.full_name,
-          subject: "Your POS Access – Action Required"
-        }
-      });
-
-      if (emailError) {
-        // Mark as pending if email failed so admin knows they need to retry
-        await client.from('staff_users').update({ status: 'invited', updated_at: new Date().toISOString() }).eq('id', staff.id);
-        throw new Error("Staff added but invite email failed. Retry required.");
-      }
-    } catch (e) {
-      // In demo environment, we log the failure but allow the record to exist
-      console.warn("Edge Function call failed. Ensure Supabase Functions are deployed.", e);
-      throw new Error("Staff added but invite email system is unreachable. Resend manually from team list.");
-    }
-
-    // 3. Log Audit Trail
-    await client.from('staff_history').insert({
-      company_id: company_id,
-      staff_id: staff.id,
-      actor_id: profile.id,
-      event_type: 'STATUS_CHANGE',
-      old_value: null,
-      new_value: 'invited',
-      reason: payload.reason
+    const response = await fetch('/api/admin/invite-staff', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(payload)
     });
 
-    return staff;
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Failed to invite staff");
+    }
+
+    const data = await response.json();
+
+    // Log Audit Trail (Client side for now, or move to backend)
+    const profile = await authService.getProfile();
+    if (profile) {
+      await client.from('staff_history').insert({
+        company_id: profile.company_id,
+        staff_id: data.staff_id,
+        actor_id: profile.id,
+        event_type: 'STATUS_CHANGE',
+        old_value: null,
+        new_value: 'invited',
+        reason: payload.reason
+      });
+    }
+
+    return data;
   },
 
   async resendInvite(staffId: string) {
     const client = getSupabase();
-    const { data: tokenData, error: tokenError } = await client.rpc('generate_staff_invite_token', { p_staff_id: staffId });
-    if (tokenError) throw tokenError;
+    const { data: { session } } = await client.auth.getSession();
+    
+    if (!session) {
+      throw new Error("Authentication required");
+    }
 
-    const { data: staff } = await client.from('staff_users').select('*').eq('id', staffId).single();
-    const profile = await authService.getProfile();
-
-    const { error: emailError } = await client.functions.invoke('send-staff-invite', {
-      body: { 
-        staff_id: staffId,
-        token: tokenData.token,
-        company_name: profile?.companies?.name,
-        role: staff.role,
-        recipient_email: staff.email,
-        recipient_name: staff.full_name,
-        subject: "Your POS Access – Action Required"
-      }
+    const response = await fetch('/api/admin/resend-staff-invite', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({ staff_id: staffId })
     });
 
-    if (emailError) throw new Error("Email delivery failed.");
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Failed to resend invite");
+    }
+
     return true;
   },
 
@@ -172,16 +141,25 @@ export const staffService = {
   async completeOnboarding(token: string, email: string, password: string, pin: string, fullName: string) {
     const client = getSupabase();
     
-    // 1. Create the Auth User
-    const { data: authData, error: authError } = await client.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName }
-      }
+    // 1. Update the Auth User
+    // Since we now create the user during invite, we just update their password and metadata
+    // They should be logged in via the magic link already.
+    const { error: authError } = await client.auth.updateUser({
+      password: password,
+      data: { full_name: fullName }
     });
 
-    if (authError) throw authError;
+    if (authError) {
+      // Fallback: If update fails, they might need to sign up (legacy flow)
+      const { error: signUpError } = await client.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: fullName } }
+      });
+      if (signUpError && !signUpError.message.includes('already registered')) {
+        throw signUpError;
+      }
+    }
 
     // 2. Complete the profile data via RPC
     // This transitions staff_users status to 'active' and sets the PIN

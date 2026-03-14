@@ -88,9 +88,11 @@ export const companyService = {
     return data || [];
   },
 
-  async createCompany(name: string) {
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    if (!user) throw new Error("Unauthorized");
+  async createCompany(name: string, passedUser?: any) {
+    const { data: { user: currentUser } } = await supabaseClient.auth.getUser();
+    const user = passedUser || currentUser;
+    
+    if (!user) throw new Error("Unauthorized: No user found for company creation");
 
     const { data: company, error: cError } = await supabaseClient
       .from('companies')
@@ -188,7 +190,7 @@ export const authService = {
   },
 
   async createCompany(name: string, passedUser?: any) {
-    return companyService.createCompany(name);
+    return companyService.createCompany(name, passedUser);
   }
 };
 

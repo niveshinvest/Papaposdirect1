@@ -85,9 +85,16 @@ async function startServer() {
   });
 
   // 3. Admin Password Reset Endpoints
+  // Validate environment variables
+  if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error("CRITICAL ERROR: Supabase environment variables missing!");
+    console.error("VITE_SUPABASE_URL:", process.env.VITE_SUPABASE_URL ? "SET" : "MISSING");
+    console.error("SUPABASE_SERVICE_ROLE_KEY:", process.env.SUPABASE_SERVICE_ROLE_KEY ? "SET" : "MISSING");
+  }
+
   const adminSupabase = createClient(
-    process.env.VITE_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.VITE_SUPABASE_URL || '',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || ''
   );
 
   const verifyAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -121,64 +128,26 @@ async function startServer() {
     const adminProfile = (req as any).profile;
 
     try {
-      // 1. Try to find in staff_users first (since UserManagement uses staff_users.id)
-      let { data: staff, error: staffError } = await adminSupabase
-        .from('staff_users')
-        .select('email, company_id')
-        .eq('id', user_id)
-        .maybeSingle();
-
-      let targetEmail = staff?.email;
-      let targetCompanyId = staff?.company_id;
-
-      // 2. Fallback to profiles if not found in staff_users
-      if (!staff) {
-        const { data: profile, error: profileError } = await adminSupabase
-          .from('profiles')
-          .select('company_id')
-          .eq('id', user_id)
-          .maybeSingle();
-        
-        if (profile) {
-          targetCompanyId = profile.company_id;
-          // Get email from auth.admin
-          const { data: { user: authUser }, error: authError } = await adminSupabase.auth.admin.getUserById(user_id);
-          if (authUser) targetEmail = authUser.email;
-        }
+      // 1. Find user email
+      const { data: { user: authUser }, error: authError } = await adminSupabase.auth.admin.getUserById(user_id);
+      if (authError || !authUser) {
+        return res.status(404).json({ error: "User not found in auth layer" });
       }
 
-      if (!targetEmail || !targetCompanyId) {
-        return res.status(404).json({ error: "Target user not found" });
-      }
-
-      if (targetCompanyId !== adminProfile.company_id) {
-        return res.status(403).json({ error: "Forbidden: Cross-company operation rejected" });
-      }
-
-      // 3. Find Auth User by Email
-      const { data: { users }, error: listError } = await adminSupabase.auth.admin.listUsers();
-      if (listError) throw listError;
-      
-      const authUser = (users as any[]).find(u => u.email === targetEmail);
-
-      if (!authUser) {
-        return res.status(400).json({ error: "User has not completed onboarding yet. They must use the invite link first." });
-      }
-
-      // 4. Update password
-      const { error: updateError } = await adminSupabase.auth.admin.updateUserById(authUser.id, {
+      // 2. Update password
+      const { error: updateError } = await adminSupabase.auth.admin.updateUserById(user_id, {
         password: new_password
       });
 
       if (updateError) throw updateError;
 
-      // Log action
+      // 3. Log action
       await adminSupabase.from('security_logs').insert({
         company_id: adminProfile.company_id,
         actor_user_id: adminUser.id,
-        target_user_id: authUser.id,
+        target_user_id: user_id,
         action: "PASSWORD_RESET",
-        metadata: { method: "DIRECT_SET", staff_id: user_id }
+        metadata: { method: "DIRECT_SET" }
       });
 
       res.json({ success: true });
@@ -194,69 +163,121 @@ async function startServer() {
     const adminProfile = (req as any).profile;
 
     try {
-      // 1. Try to find in staff_users first
-      let { data: staff, error: staffError } = await adminSupabase
-        .from('staff_users')
-        .select('email, company_id')
-        .eq('id', user_id)
-        .maybeSingle();
-
-      let targetEmail = staff?.email;
-      let targetCompanyId = staff?.company_id;
-
-      // 2. Fallback to profiles
-      if (!staff) {
-        const { data: profile, error: profileError } = await adminSupabase
-          .from('profiles')
-          .select('company_id')
-          .eq('id', user_id)
-          .maybeSingle();
-        
-        if (profile) {
-          targetCompanyId = profile.company_id;
-          const { data: { user: authUser }, error: authError } = await adminSupabase.auth.admin.getUserById(user_id);
-          if (authUser) targetEmail = authUser.email;
-        }
+      // 1. Get user email
+      const { data: { user: authUser }, error: authError } = await adminSupabase.auth.admin.getUserById(user_id);
+      if (authError || !authUser || !authUser.email) {
+        return res.status(404).json({ error: "User not found or email missing" });
       }
 
-      if (!targetEmail || !targetCompanyId) {
-        return res.status(404).json({ error: "Target user not found" });
-      }
-
-      if (targetCompanyId !== adminProfile.company_id) {
-        return res.status(403).json({ error: "Forbidden: Cross-company operation rejected" });
-      }
-
-      // 3. Find Auth User by Email
-      const { data: { users: usersList }, error: listError2 } = await adminSupabase.auth.admin.listUsers();
-      if (listError2) throw listError2;
-      
-      const authUser = (usersList as any[]).find(u => u.email === targetEmail);
-
-      if (!authUser) {
-        return res.status(400).json({ error: "User has not completed onboarding yet. They must use the invite link first." });
-      }
-
-      // Generate recovery link
-      const { data, error: linkError } = await adminSupabase.auth.admin.generateLink({
-        type: "recovery",
-        email: targetEmail
+      // 2. Trigger Supabase Password Reset Email
+      const { error: resetError } = await adminSupabase.auth.resetPasswordForEmail(authUser.email, {
+        redirectTo: `${process.env.APP_URL || 'http://localhost:3000'}/#/auth/reset-password`
       });
 
-      if (linkError) throw linkError;
+      if (resetError) throw resetError;
 
-      // Log action
+      // 3. Log action
       await adminSupabase.from('security_logs').insert({
         company_id: adminProfile.company_id,
         actor_user_id: adminUser.id,
         target_user_id: user_id,
         action: "PASSWORD_RESET",
-        metadata: { method: "RESET_LINK" }
+        metadata: { method: "SUPABASE_AUTH_RESET" }
       });
 
-      res.json({ success: true, message: "Reset link generated" });
+      res.json({ success: true, message: "Reset email sent via Supabase" });
     } catch (error: any) {
       console.error("Admin Send Reset Link Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/invite-staff", verifyAdmin, async (req, res) => {
+    const { email, full_name, role, outlet_ids, reason } = req.body;
+    const adminUser = (req as any).user;
+    const adminProfile = (req as any).profile;
+
+    try {
+      // 1. Create staff_users record first to get the invite_token
+      const { data: staff, error: staffError } = await adminSupabase
+        .from('staff_users')
+        .insert({
+          email,
+          full_name,
+          role,
+          company_id: adminProfile.company_id,
+          outlet_ids,
+          status: 'invited',
+          created_by: adminUser.id
+        })
+        .select()
+        .single();
+
+      if (staffError) throw staffError;
+
+      // 2. Invite user via Supabase Auth (Sends email automatically)
+      const { data: authData, error: authError } = await adminSupabase.auth.admin.inviteUserByEmail(email, {
+        data: { full_name },
+        redirectTo: `${process.env.APP_URL || 'http://localhost:3000'}/#/onboarding/${staff.invite_token}`
+      });
+
+      if (authError) {
+        if (authError.message.includes('already registered')) {
+          return res.status(400).json({ error: "A user with this email already exists." });
+        }
+        throw authError;
+      }
+
+      res.json({ success: true, staff_id: staff.id });
+    } catch (error: any) {
+      console.error("Staff Invite Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/resend-staff-invite", verifyAdmin, async (req, res) => {
+    const { staff_id } = req.body;
+    const adminUser = (req as any).user;
+    const adminProfile = (req as any).profile;
+
+    try {
+      // 1. Get staff record
+      const { data: staff, error: staffError } = await adminSupabase
+        .from('staff_users')
+        .select('*')
+        .eq('id', staff_id)
+        .single();
+
+      if (staffError || !staff) {
+        return res.status(404).json({ error: "Staff record not found" });
+      }
+
+      // 2. Refresh the invite token in the database (optional but good for security)
+      const { data: tokenData, error: tokenError } = await adminSupabase.rpc('generate_staff_invite_token', { p_staff_id: staff_id });
+      if (tokenError) throw tokenError;
+
+      // 3. Trigger Supabase Invite (Smart Resend)
+      // This works whether the user exists in auth.users or not.
+      // If they don't exist, it creates them. If they do, it resends the invite.
+      const { error: authError } = await adminSupabase.auth.admin.inviteUserByEmail(staff.email, {
+        data: { full_name: staff.full_name },
+        redirectTo: `${process.env.APP_URL || 'http://localhost:3000'}/#/onboarding/${tokenData.token || staff.invite_token}`
+      });
+
+      if (authError) throw authError;
+
+      // 4. Log action
+      await adminSupabase.from('security_logs').insert({
+        company_id: adminProfile.company_id,
+        actor_user_id: adminUser.id,
+        target_user_id: staff.auth_user_id, // Might be null for legacy
+        action: "INVITE_RESENT",
+        metadata: { staff_id: staff.id, email: staff.email }
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Staff Resend Invite Error:", error);
       res.status(500).json({ error: error.message });
     }
   });
