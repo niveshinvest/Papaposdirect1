@@ -29,10 +29,11 @@ import TerminalManagement from './components/TerminalManagement';
 import StaffOnboarding from './components/StaffOnboarding';
 import { TenantSelection } from './components/TenantSelection';
 import { ViewMode, Organization, User, Outlet, Company } from './types';
-import { authService, cloudOutlets, companyService, outletService, tenantContext, getSupabase } from './services/supabaseService';
+import { authService, cloudOutlets, companyService, outletService, tenantContext, getSupabase, initSupabase } from './services/supabaseService';
 import { getDatabaseVersion, applyMigration, getMigrationFile } from './services/migrationService';
 import { syncService } from './services/syncService';
 import { sessionService } from './services/sessionService';
+import { db } from './services/db';
 import { Store, ChevronDown, Loader2, ShieldAlert, Building2, LogOut } from 'lucide-react';
 
 const Layout: FC<{ 
@@ -107,6 +108,8 @@ const AppContent: FC = () => {
   const [authState, setAuthState] = useState<{ user: any | null; org: Organization | null }>({ user: null, org: null });
   const [loading, setLoading] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [showCloudConfig, setShowCloudConfig] = useState(false);
+  const [cloudForm, setCloudForm] = useState({ url: '', key: '' });
   
   // Multi-tenant state
   const [selectionRequired, setSelectionRequired] = useState(false);
@@ -118,10 +121,25 @@ const AppContent: FC = () => {
     setLoading(true);
     console.log("Boot Engine: Initializing system sequence...");
     try {
-      // Auto-run pending migrations
+      if (!navigator.onLine) {
+        throw new Error("You are currently offline. Please check your internet connection.");
+      }
+      // 0. Load Cloud Config from Local DB
+      console.log("Boot Engine: Loading cloud configuration...");
+      const cloudConfig = await db.config.get('supabase');
+      if (cloudConfig && cloudConfig.url && cloudConfig.key && cloudConfig.isEnabled) {
+        console.log("Boot Engine: Initializing Supabase with custom config...");
+        initSupabase(cloudConfig.url, cloudConfig.key);
+      }
+
+      // 1. Auto-run pending migrations
       console.log("Boot Engine: Checking database version...");
       const status = await getDatabaseVersion();
       console.log("Boot Engine: Database status:", status);
+      
+      if ((status as any).error) {
+        throw new Error((status as any).error);
+      }
       
       if (status.needsUpdate) {
         console.log(`Boot Engine: Applying ${status.pendingVersions.length} pending migrations...`);
@@ -252,24 +270,94 @@ const AppContent: FC = () => {
     }
   };
 
+  const handleSaveCloud = async () => {
+    if (!cloudForm.url || !cloudForm.key) return;
+    setLoading(true);
+    try {
+      await db.config.put({
+        id: 'supabase',
+        url: cloudForm.url,
+        key: cloudForm.key,
+        isEnabled: true,
+        lastSyncedAt: null
+      });
+      initSupabase(cloudForm.url, cloudForm.key);
+      setShowCloudConfig(false);
+      setBootError(null);
+      await bootSequence();
+    } catch (e: any) {
+      setBootError("Failed to save config: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6">
          {bootError ? (
-           <div className="text-center space-y-4 animate-in zoom-in duration-300">
+           <div className="text-center space-y-6 animate-in zoom-in duration-300 max-w-sm">
              <div className="w-16 h-16 bg-rose-500/20 text-rose-500 rounded-full flex items-center justify-center mx-auto">
                 <ShieldAlert size={32} />
              </div>
              <div className="space-y-2">
                <h2 className="text-xl font-black uppercase tracking-tighter">Boot Failure</h2>
-               <p className="text-slate-400 text-xs font-bold max-w-xs mx-auto leading-relaxed">{bootError}</p>
+               <p className="text-slate-400 text-xs font-bold leading-relaxed">{bootError}</p>
              </div>
-             <button 
-               onClick={() => window.location.reload()}
-               className="px-8 py-3 bg-white text-slate-900 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-all"
-             >
-               Retry Connection
-             </button>
+
+             {showCloudConfig ? (
+               <div className="bg-slate-800 p-6 rounded-3xl border border-slate-700 space-y-4 text-left">
+                 <div className="space-y-1">
+                   <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Supabase URL</label>
+                   <input 
+                     type="text" 
+                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-orange-500 transition-colors"
+                     placeholder="https://your-project.supabase.co"
+                     value={cloudForm.url}
+                     onChange={e => setCloudForm({...cloudForm, url: e.target.value})}
+                   />
+                 </div>
+                 <div className="space-y-1">
+                   <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Anon Key</label>
+                   <input 
+                     type="password" 
+                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-orange-500 transition-colors"
+                     placeholder="your-anon-key"
+                     value={cloudForm.key}
+                     onChange={e => setCloudForm({...cloudForm, key: e.target.value})}
+                   />
+                 </div>
+                 <div className="flex gap-2 pt-2">
+                   <button 
+                     onClick={() => setShowCloudConfig(false)}
+                     className="flex-1 py-3 bg-slate-700 text-white rounded-xl font-black uppercase tracking-widest text-[10px]"
+                   >
+                     Cancel
+                   </button>
+                   <button 
+                     onClick={handleSaveCloud}
+                     className="flex-1 py-3 bg-orange-500 text-white rounded-xl font-black uppercase tracking-widest text-[10px]"
+                   >
+                     Save & Retry
+                   </button>
+                 </div>
+               </div>
+             ) : (
+               <div className="flex flex-col gap-3">
+                 <button 
+                   onClick={() => window.location.reload()}
+                   className="w-full py-4 bg-white text-slate-900 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-all"
+                 >
+                   Retry Connection
+                 </button>
+                 <button 
+                   onClick={() => setShowCloudConfig(true)}
+                   className="w-full py-4 bg-slate-800 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] border border-slate-700 active:scale-95 transition-all"
+                 >
+                   Configure Cloud
+                 </button>
+               </div>
+             )}
            </div>
          ) : (
            <>

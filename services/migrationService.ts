@@ -135,12 +135,14 @@ export const getDatabaseVersion = async (): Promise<MigrationStatus> => {
     };
   } catch (e: any) {
     console.error("Failed to check DB version:", e);
+    const isFetchError = e instanceof TypeError && e.message.includes('fetch');
     return { 
       currentVersion: 0, 
       latestAppliedAt: null, 
       needsUpdate: true, 
-      pendingVersions: allKnownVersions 
-    };
+      pendingVersions: allKnownVersions,
+      error: isFetchError ? "Cloud connection failed. Check your Supabase URL and Internet." : e.message
+    } as any;
   }
 };
 
