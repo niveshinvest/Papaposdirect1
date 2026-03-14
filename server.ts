@@ -115,7 +115,7 @@ async function startServer() {
     next();
   };
 
-  app.post("/api/admin/reset-user-password", verifyAdmin, async (req, res) => {
+  app.post(["/api/admin/reset-user-password", "/api/admin/reset-user-password/"], verifyAdmin, async (req, res) => {
     const { user_id, new_password } = req.body;
     const adminUser = (req as any).user;
     const adminProfile = (req as any).profile;
@@ -188,7 +188,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/send-reset-link", verifyAdmin, async (req, res) => {
+  app.post(["/api/admin/send-reset-link", "/api/admin/send-reset-link/"], verifyAdmin, async (req, res) => {
     const { user_id } = req.body;
     const adminUser = (req as any).user;
     const adminProfile = (req as any).profile;
