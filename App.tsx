@@ -391,6 +391,7 @@ const AppContent: FC = () => {
         <Route path="/auth/reset-password" element={<Auth type="reset-password" onCancel={() => navigate('/auth')} onAuthenticated={bootSequence} />} />
         
         <Route path="/onboarding/:token" element={<StaffOnboarding />} />
+        <Route path="/staff/onboarding" element={<StaffOnboarding />} />
 
         <Route path="/dashboard" element={authState.user ? <Layout view={ViewMode.DASHBOARD} {...commonProps}><Dashboard activeOutletId={activeOutlet?.id} profile={authState.user} /></Layout> : <Navigate to="/auth" />} />
         <Route path="/pos" element={authState.user ? <Layout view={ViewMode.POS} {...commonProps}><POS org={authState.org} activeOutlet={activeOutlet} currentUser={authState.user} /></Layout> : <Navigate to="/auth" />} />

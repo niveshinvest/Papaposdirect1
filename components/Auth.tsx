@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { X, Mail, Lock, User, Store, ArrowRight, Loader2, ShieldCheck, KeyRound } from 'lucide-react';
 import { SubscriptionPlan, Organization, User as UserType } from '../types';
 import { getSupabase, authService } from '../services/supabaseService';
+import { staffService } from '../services/staffService';
+import { getPersistentDeviceId } from '../utils/fingerprint';
 
 interface AuthProps {
   initialPlan?: SubscriptionPlan;
@@ -122,6 +124,23 @@ const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
 
         if (authError) throw authError;
         if (authData.user) {
+          // Device Validation for Staff
+          const fingerprint = await getPersistentDeviceId();
+          const validation = await staffService.validateDevice({
+            device_fingerprint: fingerprint,
+            device_name: navigator.userAgent.split(') ')[0].split(' (')[1] || 'Web Browser',
+            staff_id: authData.user.id
+          });
+
+          if (!validation.success) {
+            if (validation.error === 'DEVICE_PENDING_APPROVAL' || validation.error === 'DEVICE_APPROVAL_REQUIRED') {
+              setError(`ACCESS BLOCKED: ${validation.error === 'DEVICE_PENDING_APPROVAL' ? 'Terminal pending admin approval.' : 'New terminal registered. Awaiting approval.'}`);
+              await supabase.auth.signOut();
+              setIsLoading(false);
+              return;
+            }
+          }
+
           onAuthenticated(null as any, authData.user as any);
           setIsLoading(false);
         }

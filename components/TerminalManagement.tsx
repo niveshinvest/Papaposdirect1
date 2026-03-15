@@ -7,14 +7,16 @@ import {
   ShieldCheck, AlertTriangle, User, Globe, Search
 } from 'lucide-react';
 import { sessionService } from '../services/sessionService';
+import { staffService } from '../services/staffService';
 import { TerminalStatus } from '../types';
 
 const TerminalManagement: React.FC = () => {
   const [terminals, setTerminals] = useState<any[]>([]);
+  const [devices, setDevices] = useState<any[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<'TERMINALS' | 'SESSIONS'>('TERMINALS');
+  const [view, setView] = useState<'TERMINALS' | 'SESSIONS' | 'DEVICES'>('TERMINALS');
 
   useEffect(() => {
     loadData();
@@ -27,6 +29,9 @@ const TerminalManagement: React.FC = () => {
       if (view === 'TERMINALS') {
         const data = await sessionService.fetchAllTerminals();
         setTerminals(data);
+      } else if (view === 'DEVICES') {
+        const data = await staffService.fetchDevices();
+        setDevices(data);
       } else {
         const data = await sessionService.fetchActiveSessions();
         setSessions(data);
@@ -59,6 +64,15 @@ const TerminalManagement: React.FC = () => {
     }
   };
 
+  const handleApproveDevice = async (id: string) => {
+    try {
+      await staffService.approveDevice(id);
+      await loadData();
+    } catch (e: any) {
+      alert(`Approval Failed: ${e.message}`);
+    }
+  };
+
   const getDeviceIcon = (ua: string = '') => {
     const lower = ua.toLowerCase();
     if (lower.includes('mobile')) return <Smartphone size={20} />;
@@ -86,6 +100,12 @@ const TerminalManagement: React.FC = () => {
            >
              Active Sessions
            </button>
+           <button 
+             onClick={() => setView('DEVICES')}
+             className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'DEVICES' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}
+           >
+             Device Approvals
+           </button>
         </div>
       </div>
 
@@ -111,7 +131,7 @@ const TerminalManagement: React.FC = () => {
         </div>
         <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-4">
            <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl"><ShieldAlert size={24} /></div>
-           <div><p className="text-slate-400 text-[9px] font-black uppercase tracking-widest">Blocked Nodes</p><h3 className="text-xl font-black text-slate-800">{terminals.filter(t => t.status === 'REVOKED').length} Denied</h3></div>
+           <div><p className="text-slate-400 text-[9px] font-black uppercase tracking-widest">Awaiting Approval</p><h3 className="text-xl font-black text-slate-800">{devices.filter(d => !d.approved).length} Devices</h3></div>
         </div>
       </div>
 
@@ -126,9 +146,11 @@ const TerminalManagement: React.FC = () => {
              <table className="w-full text-left">
                 <thead className="bg-slate-50 text-slate-400 text-[9px] font-black uppercase tracking-widest">
                    <tr>
-                      <th className="px-8 py-5">{view === 'TERMINALS' ? 'Terminal Identifier' : 'Assigned Personnel'}</th>
-                      <th className="px-8 py-5">Origin / Location</th>
-                      <th className="px-8 py-5">Cloud Heartbeat</th>
+                      <th className="px-8 py-5">{view === 'TERMINALS' ? 'Terminal Identifier' : 
+                          view === 'DEVICES' ? 'Device Fingerprint' : 
+                          'Assigned Personnel'}</th>
+                      <th className="px-8 py-5">{view === 'DEVICES' ? 'Staff Member' : 'Origin / Location'}</th>
+                      <th className="px-8 py-5">{view === 'DEVICES' ? 'Assigned Outlet' : 'Cloud Heartbeat'}</th>
                       <th className="px-8 py-5">Security Clearance</th>
                       <th className="px-8 py-5 text-right">Ops Execution</th>
                    </tr>
@@ -178,7 +200,44 @@ const TerminalManagement: React.FC = () => {
                            </div>
                         </td>
                      </tr>
-                   )) : sessions.map(s => (
+                   )) : view === 'DEVICES' ? devices.map(d => (
+                      <tr key={d.id} className="hover:bg-slate-50/50 transition-colors">
+                         <td className="px-8 py-6">
+                            <div className="flex items-center gap-4">
+                               <div className={`p-3 rounded-2xl ${d.approved ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'}`}>
+                                  <Smartphone size={20} />
+                               </div>
+                               <div>
+                                  <p className="font-black text-slate-800 text-sm">{d.device_name || 'Terminal'}</p>
+                                  <p className="text-[9px] font-mono text-slate-400">{d.device_fingerprint}</p>
+                               </div>
+                            </div>
+                         </td>
+                         <td className="px-8 py-6">
+                            <p className="text-xs font-black text-slate-700 uppercase">{d.staff_users?.full_name || 'Unknown Staff'}</p>
+                         </td>
+                         <td className="px-8 py-6">
+                            <p className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1.5"><MapPin size={10} className="text-orange-500" /> {d.outlets?.name || 'All Outlets'}</p>
+                         </td>
+                         <td className="px-8 py-6">
+                            <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
+                              d.approved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700 animate-pulse'
+                            }`}>
+                               {d.approved ? 'APPROVED' : 'AWAITING APPROVAL'}
+                            </span>
+                         </td>
+                         <td className="px-8 py-6 text-right">
+                            {!d.approved && (
+                              <button 
+                                onClick={() => handleApproveDevice(d.id)}
+                                className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg flex items-center gap-2 ml-auto"
+                              >
+                                 <ShieldCheck size={14} /> Approve Device
+                              </button>
+                            )}
+                         </td>
+                      </tr>
+                    )) : sessions.map(s => (
                      <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-8 py-6">
                            <div className="flex items-center gap-4">

@@ -7,6 +7,7 @@ import {
   Store, ShieldAlert, Zap
 } from 'lucide-react';
 import { staffService } from '../services/staffService';
+import { getSupabase } from '../services/supabaseService';
 
 const StaffOnboarding: React.FC = () => {
   const { token } = useParams<{ token: string }>();
@@ -24,8 +25,27 @@ const StaffOnboarding: React.FC = () => {
   });
 
   useEffect(() => {
-    if (token) verify();
-    else navigate('/');
+    const checkSession = async () => {
+      const supabase = getSupabase();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user?.user_metadata?.staff_id) {
+        setStaff({
+          id: session.user.user_metadata.staff_id,
+          email: session.user.email,
+          full_name: session.user.user_metadata.full_name,
+          company_id: session.user.user_metadata.company_id
+        });
+        setStep('setup');
+        setLoading(false);
+      } else if (token) {
+        verify();
+      } else {
+        navigate('/');
+      }
+    };
+    
+    checkSession();
   }, [token]);
 
   const verify = async () => {
@@ -50,8 +70,17 @@ const StaffOnboarding: React.FC = () => {
 
     setProcessing(true);
     try {
+      // 1. Update password if they came via magic link/invite
+      const supabase = getSupabase();
+      const { error: authError } = await supabase.auth.updateUser({
+        password: formData.password
+      });
+      if (authError) throw authError;
+
+      // 2. Complete onboarding in staff_users table
+      // We use the staff.id we got from metadata
       await staffService.completeOnboarding(
-        token!, 
+        token || 'SUPABASE_AUTH', 
         staff.email, 
         formData.password, 
         formData.pin,

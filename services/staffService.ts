@@ -124,6 +124,56 @@ export const staffService = {
     return result;
   },
 
+  async validateDevice(payload: {
+    device_fingerprint: string;
+    device_name: string;
+    staff_id: string;
+    outlet_id?: string;
+  }) {
+    const response = await fetch('/api/auth/validate-device', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    return await response.json();
+  },
+
+  async approveDevice(deviceId: string) {
+    const client = getSupabase();
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/admin/approve-device', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({ device_id: deviceId })
+    });
+
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Failed to approve device");
+    return result;
+  },
+
+  async fetchDevices() {
+    const client = getSupabase();
+    const profile = await authService.getProfile();
+    if (!profile || !profile.company_id) return [];
+
+    const { data, error } = await client
+      .from('devices')
+      .select('*, staff_users(full_name), outlets(name)')
+      .order('created_at', { ascending: false });
+
+    if (error) throw new Error(error.message);
+    return data || [];
+  },
+
   async verifyOnboardingToken(token: string) {
     const client = getSupabase();
     const { data, error } = await client
