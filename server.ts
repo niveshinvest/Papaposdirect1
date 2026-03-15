@@ -192,7 +192,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/invite-staff", verifyAdmin, async (req, res) => {
+  app.post(["/api/admin/invite-staff", "/api/admin/invite-staff/"], verifyAdmin, async (req, res) => {
     const { email, full_name, role, outlet_ids, reason } = req.body;
     const adminUser = (req as any).user;
     const adminProfile = (req as any).profile;
@@ -235,7 +235,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/resend-staff-invite", verifyAdmin, async (req, res) => {
+  app.post(["/api/admin/resend-staff-invite", "/api/admin/resend-staff-invite/"], verifyAdmin, async (req, res) => {
     const { staff_id } = req.body;
     const adminUser = (req as any).user;
     const adminProfile = (req as any).profile;
