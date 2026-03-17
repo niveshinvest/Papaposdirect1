@@ -258,12 +258,16 @@ async function startServer() {
       const { data: staff, error: staffError } = await adminSupabase
         .from('staff_users')
         .insert({
-          email, full_name, role,
+          email: email,
+           full_name: full_name,
+           role: role,
           company_id: adminProfile.company_id,
           outlet_ids, status: 'invited',
           created_by: adminUser.id
         })
         .select().single();
+        console.log('i m in invite-staff', staff)
+        if (staffError){ console.log('i am error in staff_users', staff)}
       if (staffError) throw staffError;
 
       // 2. Insert outlet access records
