@@ -73,8 +73,7 @@ const StaffOnboarding: React.FC = () => {
       // 1. Update password if they came via magic link/invite
       const supabase = getSupabase();
       const { error: authError } = await supabase.auth.updateUser({
-        password: formData.password,
-        email_confirmed_at:Date.now()
+        password: formData.password
       });
       if (authError) throw authError;
 

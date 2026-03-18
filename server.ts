@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { createClient } from '@supabase/supabase-js';
 import path from "path";
@@ -138,6 +139,14 @@ async function startServer() {
 
   // --- API ROUTER ---
   const apiRouter = express.Router();
+
+  // Enable CORS for API routes
+  apiRouter.use(cors());
+  
+  // Handle preflight OPTIONS requests for all API routes
+  apiRouter.options("*", (req, res) => {
+    res.sendStatus(200);
+  });
 
   // AI & External Integrations
   apiRouter.post(["/ai/generate", "/ai/generate/"], async (req, res, next) => {
