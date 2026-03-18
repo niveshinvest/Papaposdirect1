@@ -55,7 +55,34 @@ public class PapaPrintBridge {
             out.write((invoice.getString("invoice_number") + "\n").getBytes());
             out.write("--------------------------------\n".getBytes());
             
-            // ... Loop through items and print ...
+            // Loop through items and print
+            org.json.JSONArray items = invoice.getJSONArray("items");
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.getJSONObject(i);
+                String name = item.getString("name");
+                int qty = item.getInt("quantity");
+                double price = item.getDouble("total_amount");
+                
+                // Format: Item Name (max 20 chars) | Qty | Price
+                String namePart = name.length() > 20 ? name.substring(0, 17) + "..." : name;
+                String line = String.format("%-20s %2d %8.2f\n", namePart, qty, price);
+                out.write(line.getBytes());
+            }
+            
+            out.write("--------------------------------\n".getBytes());
+            
+            // Totals
+            out.write(String.format("SUBTOTAL: %22.2f\n", invoice.getDouble("subtotal")).getBytes());
+            out.write(String.format("TAX:      %22.2f\n", invoice.getDouble("total_tax")).getBytes());
+            
+            out.write(GS_FONT_DOUBLE);
+            out.write(String.format("TOTAL:    %10.2f\n", invoice.getDouble("grand_total")).getBytes());
+            out.write(GS_FONT_NORMAL);
+            
+            out.write("--------------------------------\n".getBytes());
+            out.write(ESC_ALIGN_CENTER);
+            out.write("THANK YOU! VISIT AGAIN\n".getBytes());
+            out.write(ESC_ALIGN_LEFT);
             
             out.write("\n\n\n".getBytes());
             byte[] PAPER_CUT = {0x1D, 0x56, 0x00};

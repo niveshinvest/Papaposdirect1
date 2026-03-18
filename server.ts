@@ -23,16 +23,54 @@ function validateEnv() {
 validateEnv();
 
 // 2. CENTRALIZED SUPABASE ADMIN CLIENT
-const adminSupabase = createClient(
-  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-);
+let adminSupabase: any;
+try {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.warn("Supabase credentials missing. Admin client may not function correctly.");
+  }
+  
+  adminSupabase = createClient(
+    supabaseUrl || 'https://placeholder.supabase.co',
+    supabaseKey || 'placeholder'
+  );
+} catch (err) {
+  console.error("Failed to initialize Supabase admin client:", err);
+}
 
 async function startServer() {
+  console.log("Starting server initialization...");
   const app = express();
   const PORT = 3000;
 
+  // Enable CORS for all routes
+  app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-application-name', 'x-goog-api-key']
+  }));
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  // Health check for platform
+  app.get("/health", (req, res) => res.status(200).send("OK"));
+  app.get("/api/health", (req, res) => res.status(200).json({ status: "ok" }));
+
+  // 3. GENERAL REQUEST LOGGER
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      if (res.statusCode >= 400) {
+        console.error(`[REQ] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+      } else {
+        console.log(`[REQ] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+      }
+    });
+    next();
+  });
 
   // 3. API REQUEST LOGGER
   app.use((req, res, next) => {
@@ -140,9 +178,6 @@ async function startServer() {
   // --- API ROUTER ---
   const apiRouter = express.Router();
 
-  // Enable CORS for API routes
-  apiRouter.use(cors());
-  
   // Handle preflight OPTIONS requests for all API routes
   apiRouter.options("*", (req, res) => {
     res.sendStatus(200);
@@ -255,6 +290,7 @@ async function startServer() {
 
   // Admin Proxy Endpoints
   apiRouter.post(["/admin/invite-staff", "/admin/invite-staff/"], verifyAdmin, async (req, res, next) => {
+     console.log('i m in invite-staff begning')
     try {
       const { email, full_name, role, outlet_ids } = req.body;
       if (!email || !full_name || !role || !outlet_ids || !Array.isArray(outlet_ids)) {
@@ -391,28 +427,78 @@ async function startServer() {
   const distPath = path.join(process.cwd(), "dist");
   const hasDist = fs.existsSync(distPath);
 
+  let vite: any = null;
   if (!isProduction || !hasDist) {
-    if (isProduction && !hasDist) {
-      console.warn("Production mode detected but 'dist' folder is missing. Falling back to Vite middleware.");
+    try {
+      console.log("[VITE] Initializing Vite server...");
+      vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      console.log("[VITE] Vite server initialized successfully.");
+      app.use(vite.middlewares);
+    } catch (err) {
+      console.error("[VITE] Vite initialization failed:", err);
     }
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
   } else {
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
   }
+
+  // SPA Fallback
+  app.get("*", async (req, res, next) => {
+    // Skip API routes and health checks
+    if (req.path.startsWith('/api') || req.path === '/health' || req.path === '/api/health') {
+      return next();
+    }
+
+    // Skip if it's a Vite internal path or has a file extension
+    const hasExtension = path.extname(req.path) !== "";
+    const isViteInternal = req.path.startsWith('/@');
+    if (hasExtension || isViteInternal) {
+      return next();
+    }
+
+    try {
+      if (!isProduction || !hasDist) {
+        if (!vite) {
+          return res.status(503).send("Vite is still initializing... Please refresh in a few seconds.");
+        }
+        const indexPath = path.join(process.cwd(), "index.html");
+        if (fs.existsSync(indexPath)) {
+          const template = fs.readFileSync(indexPath, "utf-8");
+          const html = await vite.transformIndexHtml(req.url, template);
+          return res.status(200).set({ "Content-Type": "text/html" }).send(html);
+        }
+      } else {
+        const indexPath = path.join(distPath, "index.html");
+        if (fs.existsSync(indexPath)) {
+          return res.sendFile(indexPath);
+        }
+      }
+      next();
+    } catch (e) {
+      console.error("[FALLBACK] Error serving index.html:", e);
+      next(e);
+    }
+  });
+
+  // 4. CATCH-ALL 404 (For non-handled routes)
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    console.warn(`[404] Not Found: ${req.method} ${req.url}`);
+    res.status(404).send("Not Found");
+  });
 
   // 5. GLOBAL ERROR HANDLER
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error("Unhandled Server Error:", err);
-    res.status(500).json({
+    if (err.stack) console.error(err.stack);
+    
+    res.status(err.status || 500).json({
       success: false,
-      error: "Internal server error"
+      error: err.message || "Internal server error",
+      path: req.path,
+      method: req.method
     });
   });
 

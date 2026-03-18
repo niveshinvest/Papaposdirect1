@@ -444,10 +444,17 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
       setPrintReady(false);
       // Wait for DOM to settle
       requestAnimationFrame(() => {
-        setTimeout(() => setPrintReady(true), 500);
+        setTimeout(() => {
+          setPrintReady(true);
+          
+          // Auto-trigger print if silent mode is supported and enabled
+          if (printerStatus?.available && printerService.getPlatform() !== 'BROWSER') {
+            handlePrint();
+          }
+        }, 500);
       });
     }
-  }, [showPrintPreview, lastInvoice]);
+  }, [showPrintPreview, lastInvoice, printerStatus]);
 
   const handlePrint = async () => {
     if (!lastInvoice || !printReady) return;
@@ -556,12 +563,6 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
       setLastInvoice({ ...invoice, items: totals.processedItems, taxBreakup: totals.taxBreakup });
       setShowPrintPreview(true);
       
-      // Auto-trigger print if silent mode is supported and enabled
-      if (printerStatus?.available && printerService.getPlatform() !== 'BROWSER') {
-        // Wait for printReady state to be true (handled by useEffect)
-        // In a real production app, we might wait for the flag or use a callback
-      }
-
       setCart([]);
       setSelectedTable(null);
 
