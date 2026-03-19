@@ -191,7 +191,7 @@ async function startServer() {
   const apiRouter = express.Router();
 
   // Handle preflight OPTIONS requests for all API routes
-  apiRouter.options("*", (req, res) => {
+  apiRouter.options(/.*/, (req, res) => {
     res.sendStatus(200);
   });
 
@@ -441,7 +441,7 @@ async function startServer() {
   });
 
   // API Catch-all (Ensures 404 JSON instead of 405 Vite)
-  apiRouter.all("*", (req, res) => {
+  apiRouter.all(/.*/, (req, res) => {
     res.status(404).json({ success: false, error: `API route ${req.method} ${req.path} not found` });
   });
 
