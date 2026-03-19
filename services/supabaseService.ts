@@ -6,9 +6,20 @@ import { supabase as defaultClient } from '../lib/supabaseClient';
 ============================================================================ */
 let supabaseClient = defaultClient;
 export const getSupabase = () => supabaseClient;
+const PROFILE_CACHE_TTL_MS = 60 * 1000;
+let profileCache: {
+  key: string;
+  profile: any;
+  fetchedAt: number;
+} | null = null;
+
+const invalidateProfileCache = () => {
+  profileCache = null;
+};
 
 export const initSupabase = (url: string, key: string) => {
   supabaseClient = createClient(url, key);
+  invalidateProfileCache();
 };
 
 export const testConnection = async (url: string, key: string) => {
@@ -41,6 +52,7 @@ export const tenantContext = {
       outlet_id,
       role
     }));
+    invalidateProfileCache();
   },
 
   async require() {
@@ -155,6 +167,14 @@ export const authService = {
     if (authError || !user) return null;
 
     const ctx = tenantContext.get();
+    const cacheKey = `${user.id}:${ctx?.company_id || 'none'}:${ctx?.outlet_id || 'none'}:${ctx?.role || 'none'}`;
+    if (
+      profileCache &&
+      profileCache.key === cacheKey &&
+      Date.now() - profileCache.fetchedAt < PROFILE_CACHE_TTL_MS
+    ) {
+      return profileCache.profile;
+    }
     
     const { data: profile, error } = await supabaseClient
       .from('profiles')
@@ -178,7 +198,7 @@ export const authService = {
       companyData = company;
     }
 
-    return {
+    const mergedProfile = {
       ...profile,
       company_id: ctx?.company_id || profile.company_id,
       outlet_id: ctx?.outlet_id || profile.outlet_id,
@@ -187,6 +207,18 @@ export const authService = {
       role: ctx?.role || profile.role,
       companies: companyData || profile.companies
     };
+
+    profileCache = {
+      key: cacheKey,
+      profile: mergedProfile,
+      fetchedAt: Date.now()
+    };
+
+    return mergedProfile;
+  },
+
+  clearProfileCache() {
+    invalidateProfileCache();
   },
 
   async createCompany(name: string, passedUser?: any) {
