@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Mail, Lock, User, Store, ArrowRight, Loader2, ShieldCheck, KeyRound } from 'lucide-react';
+import { X, Mail, Lock, User, Store, ArrowRight, Loader2, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { SubscriptionPlan, Organization, User as UserType } from '../types';
 import { getSupabase, authService } from '../services/supabaseService';
 import { staffService } from '../services/staffService';
@@ -21,6 +21,7 @@ const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -204,12 +205,20 @@ const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
                   <div className="relative">
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                     <input 
-                      type="password" required
-                      className="w-full pl-12 pr-4 py-4 bg-gray-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-orange-500 outline-none text-slate-900" 
+                      type={showPassword ? "text" : "password"} required
+                      className="w-full pl-12 pr-12 py-4 bg-gray-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-orange-500 outline-none text-slate-900" 
                       placeholder="••••••••"
                       value={formData.password}
                       onChange={(e) => setFormData({...formData, password: e.target.value})}
                     />
+                    <button
+                      type="button"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      onClick={() => setShowPassword(v => !v)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
                 </div>
               ) : step === 'details' && (
@@ -257,11 +266,19 @@ const Auth: React.FC<AuthProps> = ({ onCancel, type, onAuthenticated }) => {
                     <div className="relative">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                       <input 
-                        type="password" required
-                        className="w-full pl-12 pr-4 py-4 bg-gray-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-orange-500 outline-none text-slate-900" 
+                        type={showPassword ? "text" : "password"} required
+                        className="w-full pl-12 pr-12 py-4 bg-gray-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-orange-500 outline-none text-slate-900" 
                         value={formData.password}
                         onChange={(e) => setFormData({...formData, password: e.target.value})}
                       />
+                      <button
+                        type="button"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        onClick={() => setShowPassword(v => !v)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
                     </div>
                   </div>
                 </>

@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import { createServer as createViteServer } from "vite";
 import { createClient } from '@supabase/supabase-js';
 import path from "path";
 import fs from "fs";
@@ -8,49 +7,61 @@ import fs from "fs";
 import { aiGateway } from "./services/aiGateway";
 import { whatsappAIService } from "./services/whatsappAIService";
 
+type AdminRequest = express.Request & {
+  user?: { id: string };
+  profile?: { role: string; company_id: string; status?: string };
+};
+
 // 1. ENVIRONMENT VALIDATION
 function validateEnv() {
-  const required = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
-  for (const key of required) {
-    if (!process.env[key]) {
-      console.error(`Missing required environment variable: ${key}`);
-      // Don't exit in dev if we want to allow some functionality, but architect said exit.
-      // process.exit(1); 
-    }
-  }
-}
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-validateEnv();
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error(
+      "Missing required environment variables: SUPABASE_URL (or VITE_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY"
+    );
+  }
+
+  return { supabaseUrl, supabaseKey };
+}
 
 // 2. CENTRALIZED SUPABASE ADMIN CLIENT
 let adminSupabase: any;
 try {
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
-    console.warn("Supabase credentials missing. Admin client may not function correctly.");
-  }
-  
-  adminSupabase = createClient(
-    supabaseUrl || 'https://placeholder.supabase.co',
-    supabaseKey || 'placeholder'
-  );
+  const { supabaseUrl, supabaseKey } = validateEnv();
+  adminSupabase = createClient(supabaseUrl, supabaseKey);
 } catch (err) {
-  console.error("Failed to initialize Supabase admin client:", err);
+  console.error("Failed to initialize Supabase admin client:", err instanceof Error ? err.message : err);
+  process.exit(1);
 }
 
 async function startServer() {
   console.log("Starting server initialization...");
   const app = express();
   const PORT = 3000;
+  const isDev = process.env.NODE_ENV !== 'production';
+  const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+  const defaultDevOrigins = ['http://localhost:3000', 'http://localhost:5173'];
+  const allowedOrigins = configuredOrigins.length > 0 ? configuredOrigins : (isDev ? defaultDevOrigins : []);
 
   // Enable CORS for all routes
   app.use(cors({
-    origin: '*',
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true); // server-to-server/curl
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error("Not allowed by CORS"));
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-application-name', 'x-goog-api-key']
   }));
+
+  if (!isDev && allowedOrigins.length === 0) {
+    console.error("CORS_ALLOWED_ORIGINS is not configured in production");
+  }
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
@@ -112,8 +123,9 @@ async function startServer() {
         return res.status(403).json({ success: false, error: "Forbidden: Admin access required" });
       }
 
-      (req as any).user = user;
-      (req as any).profile = profile;
+      const adminReq = req as AdminRequest;
+      adminReq.user = { id: user.id };
+      adminReq.profile = profile;
       next();
     } catch (error) {
       next(error);
@@ -211,7 +223,14 @@ async function startServer() {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
     const challenge = req.query["hub.challenge"];
-    if (mode === "subscribe" && token === "PAPAPOS_BOT") {
+    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+
+    if (!verifyToken) {
+      console.error("WHATSAPP_VERIFY_TOKEN is not configured");
+      return res.sendStatus(500);
+    }
+
+    if (mode === "subscribe" && token === verifyToken) {
       return res.status(200).send(challenge);
     }
     res.sendStatus(403);
@@ -290,14 +309,19 @@ async function startServer() {
 
   // Admin Proxy Endpoints
   apiRouter.post(["/admin/invite-staff", "/admin/invite-staff/"], verifyAdmin, async (req, res, next) => {
-     console.log('i m in invite-staff begning')
+    console.info("[ADMIN] invite-staff request received");
     try {
       const { email, full_name, role, outlet_ids } = req.body;
       if (!email || !full_name || !role || !outlet_ids || !Array.isArray(outlet_ids)) {
         return res.status(400).json({ success: false, error: "Invalid request payload" });
       }
-      const adminProfile = (req as any).profile;
-      const adminUser = (req as any).user;
+      const adminReq = req as AdminRequest;
+      const adminProfile = adminReq.profile;
+      const adminUser = adminReq.user;
+
+      if (!adminProfile || !adminUser) {
+        return res.status(401).json({ success: false, error: "Unauthorized" });
+      }
 
       // 1. Insert staff record
       const { data: staff, error: staffError } = await adminSupabase
@@ -311,8 +335,9 @@ async function startServer() {
           created_by: adminUser.id
         })
         .select().single();
-        console.log('i m in invite-staff', staff)
-        if (staffError){ console.log('i am error in staff_users', staff)}
+      if (staffError) {
+        console.error("[ADMIN] invite-staff failed to insert staff_users record", { error: staffError.message });
+      }
       if (staffError) throw staffError;
 
       // 2. Insert outlet access records
@@ -344,6 +369,7 @@ async function startServer() {
       });
       if (authError) throw authError;
 
+      console.info("[ADMIN] invite-staff completed", { staff_id: staff.id });
       res.json({ success: true, data: { staff_id: staff.id } });
     } catch (error) {
       next(error);
@@ -428,9 +454,10 @@ async function startServer() {
   const hasDist = fs.existsSync(distPath);
 
   let vite: any = null;
-  if (!isProduction || !hasDist) {
+  if (!isProduction) {
     try {
       console.log("[VITE] Initializing Vite server...");
+      const { createServer: createViteServer } = await import("vite");
       vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",
@@ -440,8 +467,10 @@ async function startServer() {
     } catch (err) {
       console.error("[VITE] Vite initialization failed:", err);
     }
-  } else {
+  } else if (hasDist) {
     app.use(express.static(distPath));
+  } else {
+    console.warn("[STATIC] dist/ not found in production; serving API routes only.");
   }
 
   // SPA Fallback
@@ -507,4 +536,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("Server failed to start:", err);
+  process.exit(1);
+});
