@@ -92,7 +92,9 @@ const AVAILABLE_MIGRATIONS = [
   { version: 82, file: 'migrations_082_fix_profiles_recursion_v3.sql' },
   { version: 83, file: 'migrations_083_fix_inventory_relationships.sql' },
   { version: 84, file: 'migrations_084_security_logs.sql' },
-  { version: 85, file: 'migrations_085_fix_auth_trigger.sql' }
+  { version: 85, file: 'migrations_085_fix_auth_trigger.sql' },
+  { version: 86, file: 'migrations_086_add_auth_user_id_to_staff.sql' },
+  { version: 87, file: 'migrations_087_kitchen_logs_outlet_fix.sql' }
 ];
 
 export const getDatabaseVersion = async (): Promise<MigrationStatus> => {
