@@ -17,7 +17,7 @@ export const kitchenService = {
       .eq('company_id', profile.company_id)
       .eq('outlet_id', outletId)
       .in('status', ['PENDING', 'PREPARING', 'READY'])
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: false });
       
     if (error) throw new Error(error.message);
     return data || [];
@@ -30,21 +30,11 @@ export const kitchenService = {
   async updateTicketStatus(ticketId: string, currentStatus: string, nextStatus: string, outletId: string) {
     const client = getSupabase();
     if (!client) return;
-    const profile = await authService.getProfile();
-    if (!profile?.company_id) throw new Error("Unauthorized");
-    
-    const { error } = await client
-      .from('kitchen_orders')
-      .upsert({ 
-        //id: ticketId,
-        //company_id: profile.company_id,
-        //outlet_id: outletId,
-        status: nextStatus,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', ticketId)
-      .eq('company_id', profile.company_id)
-      .eq('outlet_id', outletId);
+    const { error } = await client.rpc('update_kitchen_ticket_status', {
+      p_ticket_id: ticketId,
+      p_current_status: currentStatus,
+      p_next_status: nextStatus
+    });
       
     if (error) throw new Error(error.message);
   },
