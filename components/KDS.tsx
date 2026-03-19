@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Clock, CheckCircle2, Flame, UtensilsCrossed, AlertCircle, ShoppingBag, Loader2, MonitorPlay, Volume2, VolumeX } from 'lucide-react';
 import { kitchenService } from '../services/kitchenService';
 
@@ -12,7 +12,8 @@ const KDS: React.FC<KDSProps> = ({ activeOutletId }) => {
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
   const [isMuted, setIsMuted] = useState(() => localStorage.getItem('kds_muted') === 'true');
-  const [lastProcessedTicketId, setLastProcessedTicketId] = useState<string | null>(null);
+  const seenTicketIdsRef = useRef<Set<string>>(new Set());
+  const hasBootstrappedRef = useRef(false);
 
   useEffect(() => {
     localStorage.setItem('kds_muted', isMuted.toString());
@@ -37,14 +38,16 @@ const KDS: React.FC<KDSProps> = ({ activeOutletId }) => {
     try {
       const data = await kitchenService.fetchActiveTickets(activeOutletId);
       
-      // Sound logic: Trigger if we have a new ticket that wasn't there before
-      if (data.length > 0) {
-        const newestTicket = data[0]; // Assuming sorted by created_at desc
-        if (lastProcessedTicketId && newestTicket.id !== lastProcessedTicketId) {
+      // Sound logic: Trigger only when new ticket IDs appear after bootstrap
+      const currentIds = new Set((data || []).map(t => t.id));
+      if (hasBootstrappedRef.current) {
+        const hasNewTicket = Array.from(currentIds).some(id => !seenTicketIdsRef.current.has(id));
+        if (hasNewTicket) {
           playNotificationSound();
         }
-        setLastProcessedTicketId(newestTicket.id);
       }
+      seenTicketIdsRef.current = currentIds;
+      hasBootstrappedRef.current = true;
 
       setTickets(data);
       setLastRefreshed(new Date());
