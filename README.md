@@ -15,6 +15,11 @@ View your app in AI Studio: https://ai.studio/apps/2b232d19-02a0-4b6b-b83c-94c1d
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Create `.env.local` (or update it) with required values:
+   - `GEMINI_API_KEY=<your_gemini_api_key>`
+   - `SUPABASE_URL=<your_supabase_project_url>`
+   - `SUPABASE_SERVICE_ROLE_KEY=<your_supabase_service_role_key>`
+   - `WHATSAPP_VERIFY_TOKEN=<your_webhook_verify_token>`
+   - `CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173`
 3. Run the app:
    `npm run dev`
