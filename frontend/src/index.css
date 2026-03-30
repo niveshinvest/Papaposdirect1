@@ -1,0 +1,92 @@
+ @import "tailwindcss"; 
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-white text-slate-900 antialiased;
+  }
+}
+
+/* THERMAL PRINT STYLES (ENTERPRISE GRADE) */
+@media print {
+  html, body {
+    height: auto;
+    background: #fff !important;
+    color: #000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #print-area, #print-area * {
+    visibility: visible;
+  }
+
+  #print-area {
+    position: fixed !important;
+    inset: 0 auto auto 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  /* Prevent background bleed and UI elements */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+}
+
+#print-area.print-staging {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+#print-area {
+  width: 300px; /* Default for 80mm */
+  margin: 0 auto;
+  padding: 10px;
+  background: white;
+  color: black;
+}
+
+#print-area.width-58mm {
+  width: 200px;
+}
+
+#print-area .center { text-align: center; }
+#print-area .right { text-align: right; }
+#print-area .bold { font-weight: bold; }
+#print-area .large { font-size: 16px; }
+#print-area .dotted-line { border-bottom: 1px dotted #000; margin: 5px 0; }
+#print-area table { width: 100%; border-collapse: collapse; margin: 5px 0; }
+#print-area th { border-bottom: 1px solid #000; text-align: left; font-size: 10px; }
+#print-area td { padding: 2px 0; vertical-align: top; font-size: 10px; }

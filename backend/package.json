@@ -1,0 +1,20 @@
+{
+  "name": "papapos-backend",
+  "scripts": {
+    "dev": "ts-node-dev server.ts",
+    "server": "tsx server.ts",
+    "server1": "nodemon --watch . --ext ts,json --exec tsx server.ts"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2",
+    "cors": "^2",
+    "dotenv": "^16",
+    "express": "^4"
+  },
+  "devDependencies": {
+    "@types/express": "^4",
+    "ts-node-dev": "^2",
+    "typescript": "^5"
+  }
+}
