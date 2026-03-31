@@ -13,6 +13,24 @@ import { supabaseAdmin } from "./lib/supabaseAdmin"
 import adminRoutes from "./routes/admin"
 
 const app = express()
+
+// ✅ ADD THIS HERE
+app.use(cors({
+  origin: [
+    "https://papaposdirect.pages.dev",
+    "http://localhost:5173",
+    "http://localhost:3000"
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}))
+
+app.options('*', cors())
+
+app.use(express.json())
+
+
+
 const PORT = Number(process.env.PORT) || 10000
 
 function normalizeRole(role: unknown) {
@@ -144,14 +162,7 @@ async function upsertProfileInvite(params: {
   return data
 }
 
-app.use(
-  cors({
-    origin: ["http://localhost:3000", "http://localhost:5173"],
-    credentials: true,
-  })
-)
 
-app.use(express.json())
 
 app.use("/api/admin", authMiddleware, requireCompanyAccess(), adminRoutes)
 
