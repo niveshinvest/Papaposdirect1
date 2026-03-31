@@ -3,7 +3,11 @@
   "scripts": {
     "dev": "ts-node-dev server.ts",
     "server": "tsx server.ts",
-    "server1": "nodemon --watch . --ext ts,json --exec tsx server.ts"
+    "server1": "nodemon --watch . --ext ts,json --exec tsx server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  
+  
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
