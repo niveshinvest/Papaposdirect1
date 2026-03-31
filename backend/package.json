@@ -6,8 +6,6 @@
     "server1": "nodemon --watch . --ext ts,json --exec tsx server.ts",
     "build": "tsc",
     "start": "node dist/server.js"
-  
-  
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -17,7 +15,9 @@
     "express": "^4"
   },
   "devDependencies": {
-    "@types/express": "^4",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.25",
+    "@types/node": "^25.5.0",
     "ts-node-dev": "^2",
     "typescript": "^5"
   }
