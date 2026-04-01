@@ -22,12 +22,23 @@ app.use(cors({
     "http://localhost:3000"
   ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "x-company-id",
+    "x-outlet-id",
+    "*"
+  ],
+  credentials: true
 }))
 
 app.options('*', cors())
 
 app.use(express.json())
+
+app.use("/api/admin", adminRoutes)
+
+
 
 
 

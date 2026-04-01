@@ -35,7 +35,7 @@ export async function authMiddleware(req: any, res: any, next: any) {
         typeof requestedCompanyId === "string" ? requestedCompanyId : null,
       outletId: typeof requestedOutletId === "string" ? requestedOutletId : null,
     })
-
+console.log("Resolved access:", access);
     req.user = access
     req.profile_id = access.profile_id
     req.company_id = access.company_id
