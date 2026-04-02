@@ -628,6 +628,7 @@ export const menuService = {
     }
 
     const { data, error } = await query;
+    console.log("MENU_SERVICE: FETCH_ITEMS_RESPONSE", data);
 
     if (error) throw new Error(error.message);
     return data || [];
