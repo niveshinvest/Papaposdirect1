@@ -1,7 +1,7 @@
 
 import { NAVIGATION_ITEMS, COLORS } from '../constants';
 import { ViewMode, Organization, User } from '../types';
-import { Award, Zap, ShieldCheck, Trash2, RefreshCcw, AlertTriangle } from 'lucide-react';
+import { Award, Zap, ShieldCheck, Trash2, RefreshCcw, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface SidebarProps {
   currentView: ViewMode;
@@ -9,9 +9,11 @@ interface SidebarProps {
   org: Organization | null;
   user: any | null; // Changed to any to support both User type and Profile record from DB
   onClearCache?: () => Promise<void>;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, org, user, onClearCache }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, org, user, onClearCache, collapsed = false, onToggleCollapse }) => {
   const handleClearCache = async () => {
     const confirmed = window.confirm("Clear Local Database & Re-Sync? This will wipe your local data and automatically enable cloud synchronization. Any unsynced local changes will be lost.");
     if (confirmed && onClearCache) {
@@ -24,18 +26,23 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, org, user,
   const displayRole = user?.role || 'User';
 
   return (
-    <div className="hidden md:flex w-64 bg-[#1e293b] text-white flex-col h-screen fixed left-0 top-0 z-50">
-      <div className="p-8 flex items-center gap-3 border-b border-slate-800">
+    <div className={`hidden md:flex ${collapsed ? 'w-20' : 'w-64'} bg-[#1e293b] text-white flex-col h-screen fixed left-0 top-0 z-50 transition-all duration-300`}>
+      <div className={`p-6 ${collapsed ? 'px-3' : 'px-8'} flex items-center ${collapsed ? 'justify-center' : 'gap-3'} border-b border-slate-800 relative`}>
+        {onToggleCollapse && (
+          <button onClick={onToggleCollapse} className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-10 rounded-r-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white flex items-center justify-center">
+            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
+        )}
         <div className="w-10 h-10 bg-[#FF6B00] rounded-xl flex items-center justify-center font-black text-xl shadow-lg">
           P
         </div>
-        <div>
+        <div className={collapsed ? 'hidden' : ''}>
           <h1 className="font-black text-lg tracking-tighter leading-none">PapaPos</h1>
           <span className="text-[10px] font-black text-orange-500 uppercase tracking-widest opacity-80">Pro SaaS</span>
         </div>
       </div>
 
-      <nav className="flex-1 mt-6 px-4 space-y-1 overflow-y-auto">
+      <nav className={`flex-1 mt-6 ${collapsed ? 'px-2' : 'px-4'} space-y-1 overflow-y-auto`}>
         {NAVIGATION_ITEMS.map((item) => {
           const isRoleAllowed = user && item.allowedRoles.includes(user.role);
           if (!isRoleAllowed) return null;
@@ -56,11 +63,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, org, user,
                   : isLocked ? 'opacity-30 cursor-not-allowed' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <div className="flex items-center gap-3">
+              <div className={`flex items-center ${collapsed ? 'justify-center w-full' : 'gap-3'}`}>
                 {item.icon}
-                <span className="font-bold text-sm tracking-tight">{item.label}</span>
+                {!collapsed && <span className="font-bold text-sm tracking-tight">{item.label}</span>}
               </div>
-              {isLocked && (
+              {isLocked && !collapsed && (
                 <div className="bg-slate-700 p-1 rounded-md">
                    <Zap size={10} className="text-orange-500" />
                 </div>
@@ -72,38 +79,38 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, org, user,
         <div className="pt-4 mt-4 border-t border-slate-800 space-y-1">
           <button
             onClick={() => onViewChange(ViewMode.RECYCLE_BIN)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+            className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all ${
               currentView === ViewMode.RECYCLE_BIN 
                 ? 'bg-red-600 text-white shadow-xl shadow-red-900/20' 
                 : 'text-slate-400 hover:bg-slate-800 hover:text-white'
             }`}
           >
             <Trash2 size={20} />
-            <span className="font-bold text-sm tracking-tight">Recycle Bin</span>
+            {!collapsed && <span className="font-bold text-sm tracking-tight">Recycle Bin</span>}
           </button>
 
           <button
             onClick={handleClearCache}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-orange-500 hover:bg-orange-500 hover:text-white font-black"
+            className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all text-orange-500 hover:bg-orange-500 hover:text-white font-black`}
           >
             <RefreshCcw size={20} />
-            <span className="text-sm tracking-tight uppercase tracking-widest text-[10px]">Clear Cache & Sync</span>
+            {!collapsed && <span className="text-sm tracking-tight uppercase tracking-widest text-[10px]">Clear Cache & Sync</span>}
           </button>
         </div>
       </nav>
 
-      <div className="p-6 border-t border-slate-800">
+      <div className={`p-6 ${collapsed ? 'px-2' : ''} border-t border-slate-800`}>
         <div className="bg-slate-800 rounded-2xl p-4 space-y-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center font-black text-orange-500 uppercase">
               {displayName.charAt(0)}
             </div>
-            <div className="overflow-hidden text-left">
+            <div className={`overflow-hidden text-left ${collapsed ? 'hidden' : ''}`}>
               <p className="text-sm font-black truncate leading-tight">{displayName}</p>
               <p className="text-[9px] font-black uppercase text-slate-500 tracking-tighter mt-0.5">{displayRole}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 mt-2">
+          <div className={`flex items-center gap-2 mt-2 ${collapsed ? 'justify-center' : ''}`}>
               <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
                 org?.plan === 'ENTERPRISE' ? 'bg-purple-500 text-white' : 
                 org?.plan === 'PRO' ? 'bg-orange-500 text-white' : 
