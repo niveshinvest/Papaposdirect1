@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { MenuItem, Table, OrderType, Invoice, CartItem, PaymentMode, Modifier } from '../types';
 import { 
   ShoppingCart, Search, Trash2, Plus, Minus, Receipt, 
-  X, Utensils, Layers, Info, WifiOff, Wifi,
+  X, Utensils, Info, WifiOff, Wifi,
   MonitorPlay, ChevronRight, Check, AlertCircle, Loader2,
   ChevronLeft, ShoppingBag, Printer, QrCode, User, CreditCard, Wallet, Banknote,
   Settings2, Mic, MicOff, Sparkles, Maximize, Minimize
@@ -790,7 +790,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
       {/* Menu Grid */}
       <div className="flex-1 overflow-hidden no-print">
-        <div className="h-full lg:flex lg:bg-slate-50">
+        <div className="h-full min-h-0 lg:flex lg:bg-slate-50 relative">
           <div className={`hidden lg:flex ${isDesktopCategoryOpen ? 'lg:w-56' : 'lg:w-0'} lg:shrink-0 bg-white text-slate-700 flex-col border-r border-slate-200 transition-all duration-300 overflow-hidden`}>
             <button
               onClick={() => setIsDesktopCategoryOpen((open) => !open)}
@@ -816,12 +816,13 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
           </div>
           <button
             onClick={() => setIsDesktopCategoryOpen((open) => !open)}
-            className="hidden lg:flex h-12 w-7 mt-4 items-center justify-center rounded-r-xl border border-l-0 border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors"
+            className="hidden lg:flex h-12 w-7 absolute top-4 z-20 items-center justify-center rounded-r-xl border border-l-0 border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors"
+            style={{ left: isDesktopCategoryOpen ? '14rem' : '0rem' }}
             title={isDesktopCategoryOpen ? 'Collapse categories' : 'Expand categories'}
           >
             {isDesktopCategoryOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
           </button>
-          <div className={`min-w-0 flex-1 overflow-y-auto p-4 lg:p-5 pb-32 lg:pb-6 scrollbar-hide transition-all duration-500 ease-in-out ${isCatalogOpen ? 'opacity-100' : 'lg:w-0 lg:flex-none opacity-0 pointer-events-none overflow-hidden p-0'}`}>
+          <div className={`min-w-0 flex-1 min-h-0 overflow-y-auto p-4 lg:p-5 lg:pl-12 pb-32 lg:pb-6 scrollbar-hide transition-all duration-500 ease-in-out ${isCatalogOpen ? 'opacity-100' : 'lg:w-0 lg:flex-none opacity-0 pointer-events-none overflow-hidden p-0'}`}>
         {priceError && <div className="mb-6 bg-rose-50 border border-rose-100 p-4 rounded-2xl flex items-center gap-3 text-rose-600 animate-in fade-in slide-in-from-top-4"><AlertCircle size={20} /><p className="font-bold text-sm">{priceError}</p></div>}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
           {filteredItems.map(item => (
@@ -841,8 +842,8 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
           ))}
         </div>
           </div>
-          <div className="hidden lg:flex lg:w-[430px] xl:w-[460px] lg:shrink-0 lg:h-full border-l border-slate-300 bg-white">
-            <div className="flex h-full w-full flex-col relative">
+          <div className="hidden lg:flex lg:w-[430px] xl:w-[460px] lg:shrink-0 lg:h-full min-h-0 border-l border-slate-300 bg-white">
+            <div className="flex h-full min-h-0 w-full flex-col relative overflow-hidden">
               <div className="p-0 border-b border-slate-300 shrink-0">
                 <div className="grid grid-cols-3 bg-slate-800 text-white text-center">
                   {[
@@ -897,7 +898,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide pb-[320px]">
+              <div className="flex-1 min-h-0 overflow-y-auto p-8 space-y-8 scrollbar-hide pb-[320px]">
                 {cart.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-30"><Utensils size={64} className="text-slate-300" /><p className="font-black text-xs uppercase tracking-widest">Cart is Empty</p></div> : cart.map((item, idx) => (
                   <div key={`${item.id}-${idx}`} className="flex justify-between items-start animate-in slide-in-from-right-4 duration-300">
                     <div className="flex-1 min-w-0 pr-4">
