@@ -58,6 +58,7 @@ const Recipes: React.FC<RecipesProps> = ({ activeOutlet }) => {
       const [recipes, items, invData] = await Promise.all([
         recipeService.fetchRecipes(activeOutlet.id),
         menuService.fetchItems(),
+        
         getSupabase().from('inventory').select('id, name').eq('outlet_id', activeOutlet.id)
       ]);
       setGroupedRecipes(recipes);

@@ -1,6 +1,5 @@
 import { authService } from "./supabaseService";
 import { AIRequest, AIResponse } from "../types";
-import { API_BASE } from "./config";
 
 export const universalAIService = {
   /**
@@ -11,8 +10,9 @@ export const universalAIService = {
     console.log("universalai", request);
     const profile = await authService.getProfile();
     if (!profile?.company_id) throw new Error("Authentication required");
+
     try {
-      const response = await fetch(`${API_BASE}/api/admin/generate`, {
+      const response = await fetch("/api/admin/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"

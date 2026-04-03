@@ -85,7 +85,7 @@ export const recipeService = {
           required: ['ingredients', 'steps', 'total_cost']
         }
       });
-
+   console.log("RECIPE_SERVICE: AI_RESPONSE_RECEIVED", response);
       if (response.error) throw new Error(response.error);
 
       const recipeJson = JSON.parse(response.text || '{}');

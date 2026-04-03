@@ -5,16 +5,24 @@ export async function authMiddleware(req: any, res: any, next: any) {
   try {
     const auth = req.headers.authorization
 
+    console.log("AUTH HEADER:", auth)   // 👈 ADD HERE
+
+
     if (!auth?.startsWith("Bearer ")) {
       return res.status(401).json({ error: "No token found" })
     }
 
     const token = auth.split(" ")[1]
 
+    console.log("TOKEN START:", token?.substring(0, 20))  // 👈 optional but helpful
+
+
     const {
       data: { user },
       error,
     } = await supabaseAdmin.auth.getUser(token)
+    console.log("USER:", user)   // 👈 add this also
+    console.log("ERROR:", error) // 👈 add this also
 
     if (error || !user) {
       return res.status(401).json({ error: "Invalid token" })
