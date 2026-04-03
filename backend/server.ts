@@ -11,8 +11,14 @@ import {
 import { executeDataQuery, executeRpc } from "./data/dataGateway"
 import { supabaseAdmin } from "./lib/supabaseAdmin"
 import adminRoutes from "./routes/admin"
-
+console.log("SERVER FILE LOADED !!!")
 const app = express()
+console.log("SERVER FILE LOADED !!!")
+
+app.use((req, res, next) => {
+  console.log("HEADERS:", req.headers)
+  next()
+})
 
 app.use((req, res, next) => {
   console.log("Incoming:", req.method, req.url)
