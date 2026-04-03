@@ -48,6 +48,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
   const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>('80mm');
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState(true);
+  const [isDesktopCategoryOpen, setIsDesktopCategoryOpen] = useState(true);
   const [printerStatus, setPrinterStatus] = useState<{ available: boolean; name: string; type: string } | null>(null);
   const [printReady, setPrintReady] = useState(false);
   const [modifierItem, setModifierItem] = useState<any | null>(null);
@@ -878,7 +879,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide">
+              <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide pb-44">
                 {cart.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-30"><Utensils size={64} className="text-slate-300" /><p className="font-black text-xs uppercase tracking-widest">Cart is Empty</p></div> : cart.map((item, idx) => (
                   <div key={`${item.id}-${idx}`} className="flex justify-between items-start animate-in slide-in-from-right-4 duration-300">
                     <div className="flex-1 min-w-0 pr-4">
@@ -904,8 +905,8 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                   </div>
                 ))}
               </div>
-              <div className="p-10 bg-slate-900 text-white space-y-8 rounded-t-[56px] shadow-2xl shrink-0">
-                <div className="space-y-4">
+              <div className="p-5 bg-slate-900 text-white space-y-4 border-t border-slate-700 shadow-2xl shrink-0 sticky bottom-0 z-20">
+                <div className="space-y-2">
                   <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500"><span>Taxable Value</span><span className="text-slate-300">Rs. {totals.subtotal.toFixed(2)}</span></div>
                   
                   {activeOutlet?.gst_registered && Object.entries(totals.taxBreakup).map(([rate, vals]: [string, any]) => (
@@ -927,11 +928,11 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                     </div>
                   ))}
 
-                  {activeOutlet?.gst_registered && <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 pt-2 border-t border-white/5"><span>Total Tax Aggregates</span><span className="text-slate-300">Rs. {totals.totalTax.toFixed(2)}</span></div>}
+                  {activeOutlet?.gst_registered && <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 pt-2 border-t border-white/5"><span>Total Tax</span><span className="text-slate-300">Rs. {totals.totalTax.toFixed(2)}</span></div>}
                   <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500"><span>Round-off</span><span className={totals.roundOff < 0 ? 'text-rose-400' : 'text-emerald-400'}>Rs. {totals.roundOff.toFixed(2)}</span></div>
                 </div>
-                <div className="flex justify-between items-end pt-8 border-t border-white/10">
-                  <div><p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Grand Payable</p><span className="font-black text-5xl text-orange-500 tracking-tighter">Rs. {totals.grandTotal}</span></div>
+                <div className="flex justify-between items-end pt-4 border-t border-white/10">
+                  <div><p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Grand Payable</p><span className="font-black text-3xl text-orange-500 tracking-tighter">Rs. {totals.grandTotal}</span></div>
                   <div className="flex flex-col items-end gap-2">
                     <div className={`flex items-center gap-2 px-3 py-1 rounded-lg border ${isOnline ? 'border-emerald-500/20 text-emerald-500' : 'border-rose-500/20 text-rose-500'}`}>{isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}<span className="text-[9px] font-black uppercase">{isOnline ? 'Sync' : 'Local'}</span></div>
                     {printerStatus && (
@@ -946,7 +947,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                 <button 
                   onClick={handleFinalizeAndPrint} 
                   disabled={cart.length === 0 || isProcessing || !selectedMop} 
-                  className="w-full py-7 bg-emerald-600 text-white rounded-[36px] font-black uppercase tracking-widest text-base shadow-2xl shadow-emerald-900/40 flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-30 disabled:grayscale touch-manipulation"
+                  className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-xl shadow-emerald-900/30 flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-30 disabled:grayscale touch-manipulation"
                 >
                   {isProcessing ? <Loader2 className="animate-spin" size={24} /> : (
                     <>
