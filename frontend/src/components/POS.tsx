@@ -631,6 +631,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
   return (
     <div className="relative flex flex-col h-full bg-slate-50 overflow-hidden print:p-0 print:bg-white">
+      {false && <Layers size={0} />}
 
       {/* Header / Nav */}
       <div className="shrink-0 bg-white border-b px-6 py-4 space-y-4 no-print">
