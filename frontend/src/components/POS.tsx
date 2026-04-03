@@ -633,16 +633,16 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
       {/* Header / Nav */}
       <div className="shrink-0 bg-white border-b px-6 py-4 space-y-4 no-print">
-        <div className="hidden lg:flex items-center justify-between border border-slate-200 bg-slate-50 px-4 py-2 rounded-xl">
+        <div className="hidden lg:flex items-center justify-between border border-slate-200 bg-white px-4 py-2 rounded-xl">
           <div className="flex items-center gap-4">
             <button className="p-2 rounded-lg bg-slate-100 text-slate-700">
               <Layers size={16} />
             </button>
-            <div className="font-black text-2xl text-slate-900 leading-none">PapaPOS</div>
-            <button className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-md">New Order</button>
+            <div className="font-black text-2xl text-rose-600 leading-none">Petpooja</div>
+            <button className="px-4 py-2 bg-orange-600 text-white text-[10px] font-black uppercase tracking-widest rounded-md">New Order</button>
           </div>
           <div className="flex items-center gap-3">
-            <button className="px-4 py-2 border border-slate-300 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-700 bg-white">Ask For Support</button>
+            <button className="px-4 py-2 border border-slate-300 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-600">Ask For Support</button>
             <button className="p-2 rounded-full bg-slate-100 text-slate-500"><Info size={16} /></button>
             <button className="p-2 rounded-full bg-slate-100 text-slate-500"><AlertCircle size={16} /></button>
           </div>
@@ -789,24 +789,17 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
       {/* Menu Grid */}
       <div className="flex-1 overflow-hidden no-print">
-        <div className="h-full lg:flex lg:bg-slate-100">
-          <div className={`hidden lg:flex ${isDesktopCategoryOpen ? 'lg:w-52' : 'lg:w-16'} lg:shrink-0 bg-slate-800 text-white flex-col border-r border-slate-700 transition-all duration-300`}>
-            <button
-              onClick={() => setIsDesktopCategoryOpen((open) => !open)}
-              className="flex items-center justify-between gap-2 px-3 py-3 border-b border-slate-700 hover:bg-slate-700 transition-colors"
-            >
-              <span className={`text-[10px] font-black uppercase tracking-widest ${isDesktopCategoryOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Menu</span>
-              {isDesktopCategoryOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
-            </button>
+        <div className="h-full lg:flex lg:bg-slate-300">
+          <div className="hidden lg:flex lg:w-52 lg:shrink-0 bg-slate-700 text-white flex-col border-r border-slate-600">
             {['All', ...categories.map(c => c.name)].map(cat => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-4 text-left text-sm font-bold border-b border-slate-700 transition-colors ${
-                  selectedCategory === cat ? 'bg-orange-600 text-white' : 'text-slate-200 hover:bg-slate-700'
+                className={`px-5 py-5 text-left text-sm font-bold border-b border-slate-600 transition-colors ${
+                  selectedCategory === cat ? 'bg-emerald-500 text-white' : 'text-slate-200 hover:bg-slate-600'
                 }`}
               >
-                <span className={`block truncate ${isDesktopCategoryOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>{cat}</span>
+                {cat}
               </button>
             ))}
           </div>
