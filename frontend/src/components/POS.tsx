@@ -634,6 +634,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
       {/* Header / Nav */}
       <div className="shrink-0 bg-white border-b px-6 py-4 space-y-4 no-print">
         <div className="hidden lg:flex items-center justify-between border border-slate-200 bg-slate-50 px-4 py-2 rounded-xl">
+        <div className="hidden lg:flex items-center justify-between border border-slate-200 bg-white px-4 py-2 rounded-xl">
           <div className="flex items-center gap-4">
             <button className="p-2 rounded-lg bg-slate-100 text-slate-700">
               <Layers size={16} />
@@ -643,6 +644,11 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
           </div>
           <div className="flex items-center gap-3">
             <button className="px-4 py-2 border border-slate-300 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-700 bg-white">Ask For Support</button>
+            <div className="font-black text-2xl text-rose-600 leading-none">Petpooja</div>
+            <button className="px-4 py-2 bg-orange-600 text-white text-[10px] font-black uppercase tracking-widest rounded-md">New Order</button>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="px-4 py-2 border border-slate-300 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-600">Ask For Support</button>
             <button className="p-2 rounded-full bg-slate-100 text-slate-500"><Info size={16} /></button>
             <button className="p-2 rounded-full bg-slate-100 text-slate-500"><AlertCircle size={16} /></button>
           </div>
@@ -798,20 +804,19 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
               <span className="text-[10px] font-black uppercase tracking-widest">Categories</span>
               <ChevronLeft size={16} />
             </button>
-            {['All', ...categories.map((c) => c.name)].map((cat) => {
-              const isActive = selectedCategory === cat;
-              return (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-4 py-4 text-left text-sm font-bold border-b border-slate-100 transition-colors ${
-                    isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  <span className="block truncate">{cat}</span>
-                </button>
-              );
-            })}
+        <div className="h-full lg:flex lg:bg-slate-300">
+          <div className="hidden lg:flex lg:w-52 lg:shrink-0 bg-slate-700 text-white flex-col border-r border-slate-600">
+            {['All', ...categories.map(c => c.name)].map(cat => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-4 py-4 text-left text-sm font-bold border-b border-slate-100 transition-colors ${
+                  selectedCategory === cat ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <span className="block truncate">{cat}</span>
+              </button>
+            ))}
           </div>
           <button
             onClick={() => setIsDesktopCategoryOpen((open) => !open)}
@@ -820,6 +825,14 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
           >
             {isDesktopCategoryOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
           </button>
+                className={`px-5 py-5 text-left text-sm font-bold border-b border-slate-600 transition-colors ${
+                  selectedCategory === cat ? 'bg-emerald-500 text-white' : 'text-slate-200 hover:bg-slate-600'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
           <div className={`min-w-0 flex-1 overflow-y-auto p-4 lg:p-5 pb-32 lg:pb-6 scrollbar-hide transition-all duration-500 ease-in-out ${isCatalogOpen ? 'opacity-100' : 'lg:w-0 lg:flex-none opacity-0 pointer-events-none overflow-hidden p-0'}`}>
         {priceError && <div className="mb-6 bg-rose-50 border border-rose-100 p-4 rounded-2xl flex items-center gap-3 text-rose-600 animate-in fade-in slide-in-from-top-4"><AlertCircle size={20} /><p className="font-bold text-sm">{priceError}</p></div>}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
@@ -842,6 +855,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
           </div>
           <div className="hidden lg:flex lg:w-[430px] xl:w-[460px] lg:shrink-0 lg:h-full border-l border-slate-300 bg-white">
             <div className="flex h-full w-full flex-col relative">
+            <div className="flex h-full w-full flex-col">
               <div className="p-0 border-b border-slate-300 shrink-0">
                 <div className="grid grid-cols-3 bg-slate-800 text-white text-center">
                   {[
@@ -897,6 +911,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
               </div>
 
               <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide pb-[320px]">
+              <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide pb-44">
                 {cart.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-30"><Utensils size={64} className="text-slate-300" /><p className="font-black text-xs uppercase tracking-widest">Cart is Empty</p></div> : cart.map((item, idx) => (
                   <div key={`${item.id}-${idx}`} className="flex justify-between items-start animate-in slide-in-from-right-4 duration-300">
                     <div className="flex-1 min-w-0 pr-4">
@@ -923,6 +938,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                 ))}
               </div>
               <div className="p-5 bg-slate-900 text-white space-y-4 border-t border-slate-700 shadow-2xl shrink-0 absolute bottom-0 left-0 right-0 z-20">
+              <div className="p-5 bg-slate-900 text-white space-y-4 border-t border-slate-700 shadow-2xl shrink-0 sticky bottom-0 z-20">
                 <div className="space-y-2">
                   <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500"><span>Taxable Value</span><span className="text-slate-300">Rs. {totals.subtotal.toFixed(2)}</span></div>
                   
