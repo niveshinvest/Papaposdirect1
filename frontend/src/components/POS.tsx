@@ -48,6 +48,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
   const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>('80mm');
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState(true);
+  const [isDesktopCategoryOpen, setIsDesktopCategoryOpen] = useState(true);
   const [printerStatus, setPrinterStatus] = useState<{ available: boolean; name: string; type: string } | null>(null);
   const [printReady, setPrintReady] = useState(false);
   const [modifierItem, setModifierItem] = useState<any | null>(null);
@@ -632,8 +633,22 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
       {/* Header / Nav */}
       <div className="shrink-0 bg-white border-b px-6 py-4 space-y-4 no-print">
+        <div className="hidden lg:flex items-center justify-between border border-slate-200 bg-slate-50 px-4 py-2 rounded-xl">
+          <div className="flex items-center gap-4">
+            <button className="p-2 rounded-lg bg-slate-100 text-slate-700">
+              <Layers size={16} />
+            </button>
+            <div className="font-black text-2xl text-slate-900 leading-none">PapaPOS</div>
+            <button className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-md">New Order</button>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="px-4 py-2 border border-slate-300 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-700 bg-white">Ask For Support</button>
+            <button className="p-2 rounded-full bg-slate-100 text-slate-500"><Info size={16} /></button>
+            <button className="p-2 rounded-full bg-slate-100 text-slate-500"><AlertCircle size={16} /></button>
+          </div>
+        </div>
         <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex bg-slate-100 p-1.5 rounded-3xl border shadow-inner shrink-0">
+          <div className="flex bg-slate-100 p-1.5 rounded-3xl border shadow-inner shrink-0 lg:hidden">
              {['DINE_IN', 'TAKEAWAY', 'DELIVERY'].map(type => (
                <button key={type} onClick={() => setOrderType(type as OrderType)} className={`px-5 py-3 lg:px-7 lg:py-4 rounded-2xl text-[10px] lg:text-[11px] font-black uppercase tracking-widest transition-all touch-manipulation ${orderType === type ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>{type.replace('_', '-')}</button>
              ))}
@@ -655,26 +670,26 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
               {isListening ? <MicOff size={18} /> : <Mic size={18} />}
             </button>
           </div>
-          <div className="flex bg-indigo-50 p-1.5 rounded-3xl border border-indigo-100">
+          <div className="flex bg-indigo-50 p-1.5 rounded-3xl border border-indigo-100 lg:hidden">
             {['80mm', '58mm'].map(w => (
                <button key={w} onClick={() => setPaperWidth(w as any)} className={`px-4 py-3 lg:px-5 lg:py-4 rounded-2xl text-[9px] lg:text-[10px] font-black uppercase transition-all touch-manipulation ${paperWidth === w ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-400'}`}>{w}</button>
             ))}
           </div>
           <button 
             onClick={toggleFullscreen}
-            className="p-3 lg:p-4 bg-slate-100 text-slate-400 rounded-3xl hover:bg-indigo-50 hover:text-indigo-600 transition-all shadow-sm touch-manipulation"
+            className="p-3 lg:p-4 bg-slate-100 text-slate-400 rounded-3xl hover:bg-indigo-50 hover:text-indigo-600 transition-all shadow-sm touch-manipulation lg:hidden"
             title="Toggle Fullscreen"
           >
             {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
           </button>
         </div>
 
-        <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
+        <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide lg:hidden">
           {['All', ...categories.map(c => c.name)].map(cat => (
             <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-6 py-3 lg:px-7 lg:py-4 rounded-full whitespace-nowrap font-black text-[10px] lg:text-[11px] uppercase transition-all border-2 touch-manipulation ${selectedCategory === cat ? 'bg-slate-900 border-slate-900 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'}`}>{cat}</button>
           ))}
         </div>
-        <div className="hidden lg:flex items-center gap-3 overflow-x-auto pt-1 scrollbar-hide">
+        <div className="hidden items-center gap-3 overflow-x-auto pt-1 scrollbar-hide">
           <button onClick={() => setShowPaymentPicker(true)} className="flex items-center gap-3 rounded-3xl border border-slate-200 bg-white px-5 py-3 text-left shadow-sm transition-all hover:border-indigo-300 hover:bg-indigo-50">
             <CreditCard size={18} className="text-indigo-600" />
             <span className="text-[11px] font-black uppercase tracking-widest text-slate-700">Payment: {selectedMop?.name || 'Select Mode'}</span>
@@ -774,20 +789,40 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
 
       {/* Menu Grid */}
       <div className="flex-1 overflow-hidden no-print">
-        <div className="h-full lg:flex">
-          <div className={`min-w-0 flex-1 overflow-y-auto p-6 pb-32 lg:pb-6 scrollbar-hide transition-all duration-500 ease-in-out ${isCatalogOpen ? 'opacity-100' : 'lg:w-0 lg:flex-none opacity-0 pointer-events-none overflow-hidden p-0'}`}>
+        <div className="h-full lg:flex lg:bg-slate-100">
+          <div className={`hidden lg:flex ${isDesktopCategoryOpen ? 'lg:w-52' : 'lg:w-16'} lg:shrink-0 bg-slate-800 text-white flex-col border-r border-slate-700 transition-all duration-300`}>
+            <button
+              onClick={() => setIsDesktopCategoryOpen((open) => !open)}
+              className="flex items-center justify-between gap-2 px-3 py-3 border-b border-slate-700 hover:bg-slate-700 transition-colors"
+            >
+              <span className={`text-[10px] font-black uppercase tracking-widest ${isDesktopCategoryOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Menu</span>
+              {isDesktopCategoryOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+            </button>
+            {['All', ...categories.map(c => c.name)].map(cat => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-4 text-left text-sm font-bold border-b border-slate-700 transition-colors ${
+                  selectedCategory === cat ? 'bg-orange-600 text-white' : 'text-slate-200 hover:bg-slate-700'
+                }`}
+              >
+                <span className={`block truncate ${isDesktopCategoryOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>{cat}</span>
+              </button>
+            ))}
+          </div>
+          <div className={`min-w-0 flex-1 overflow-y-auto p-4 lg:p-5 pb-32 lg:pb-6 scrollbar-hide transition-all duration-500 ease-in-out ${isCatalogOpen ? 'opacity-100' : 'lg:w-0 lg:flex-none opacity-0 pointer-events-none overflow-hidden p-0'}`}>
         {priceError && <div className="mb-6 bg-rose-50 border border-rose-100 p-4 rounded-2xl flex items-center gap-3 text-rose-600 animate-in fade-in slide-in-from-top-4"><AlertCircle size={20} /><p className="font-bold text-sm">{priceError}</p></div>}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
           {filteredItems.map(item => (
-            <div key={item.id} onClick={() => addToCart(item)} className="bg-white rounded-[32px] overflow-hidden border border-slate-100 hover:border-orange-500 cursor-pointer active:scale-95 transition-all shadow-sm group hover:shadow-xl touch-manipulation">
-              <div className="h-32 lg:h-36 bg-slate-50 relative overflow-hidden">
+            <div key={item.id} onClick={() => addToCart(item)} className="bg-white rounded-md lg:rounded-none overflow-hidden border border-slate-200 hover:border-orange-500 cursor-pointer active:scale-95 transition-all shadow-sm group hover:shadow-md touch-manipulation min-h-[88px]">
+              <div className="h-32 lg:hidden bg-slate-50 relative overflow-hidden">
                 {item.image_url || item.image ? <img src={item.image_url || item.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt={item.name} /> : <div className="w-full h-full flex items-center justify-center text-slate-200"><Utensils size={32} /></div>}
                 <div className="absolute top-3 right-3 bg-white/95 px-3 py-1.5 rounded-xl text-[10px] font-black text-orange-600 shadow-xl border border-white/50">₹{item.base_price ?? item.price}</div>
               </div>
-              <div className="p-5 lg:p-6">
-                <h4 className="font-black text-sm lg:text-base text-slate-800 leading-tight h-10 lg:h-12 line-clamp-2">{item.name}</h4>
-                <div className="flex items-center justify-between mt-4">
-                   <p className="text-[9px] text-slate-400 font-black uppercase tracking-tighter">{item.menu_categories?.name || item.category}</p>
+              <div className="p-4 lg:p-4">
+                <h4 className="font-black text-sm lg:text-[30px] lg:leading-8 text-slate-800 leading-tight h-10 lg:h-16 line-clamp-2">{item.name}</h4>
+                <div className="flex items-center justify-between mt-4 lg:mt-2">
+                   <p className="text-[9px] lg:text-xs text-slate-400 font-black uppercase tracking-tighter">{item.menu_categories?.name || item.category}</p>
                    <div className="p-2.5 bg-slate-50 text-slate-300 rounded-xl group-hover:bg-orange-50 group-hover:text-orange-500 transition-colors"><Plus size={16} /></div>
                 </div>
               </div>
@@ -795,9 +830,26 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
           ))}
         </div>
           </div>
-          <div className="hidden lg:flex lg:w-[430px] xl:w-[460px] lg:shrink-0 lg:h-full border-l border-slate-200 bg-white">
+          <div className="hidden lg:flex lg:w-[430px] xl:w-[460px] lg:shrink-0 lg:h-full border-l border-slate-300 bg-white">
             <div className="flex h-full w-full flex-col">
-              <div className="p-8 border-b flex justify-between items-center shrink-0">
+              <div className="p-0 border-b border-slate-300 shrink-0">
+                <div className="grid grid-cols-3 bg-slate-800 text-white text-center">
+                  {[
+                    { key: 'DINE_IN', label: 'DINE IN' },
+                    { key: 'DELIVERY', label: 'DELIVERY' },
+                    { key: 'TAKEAWAY', label: 'PICK UP' }
+                  ].map(mode => (
+                    <button
+                      key={mode.key}
+                      onClick={() => setOrderType(mode.key as OrderType)}
+                      className={`py-4 font-black text-sm border-r border-slate-700 last:border-r-0 ${orderType === mode.key ? 'bg-orange-600 text-white' : 'text-slate-200 hover:bg-slate-700'}`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="p-6 border-b flex justify-between items-center shrink-0">
                 <div className="flex items-center gap-4">
                   <div className="w-16 h-16 bg-orange-500 rounded-[24px] flex items-center justify-center text-white shadow-xl"><ShoppingBag size={30} /></div>
                   <div><h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none">Checkout</h3><p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mt-1.5">{orderType} • {selectedTable?.name || 'Quick Sale'}</p></div>
@@ -834,7 +886,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide">
+              <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide pb-44">
                 {cart.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-30"><Utensils size={64} className="text-slate-300" /><p className="font-black text-xs uppercase tracking-widest">Cart is Empty</p></div> : cart.map((item, idx) => (
                   <div key={`${item.id}-${idx}`} className="flex justify-between items-start animate-in slide-in-from-right-4 duration-300">
                     <div className="flex-1 min-w-0 pr-4">
@@ -860,8 +912,8 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                   </div>
                 ))}
               </div>
-              <div className="p-10 bg-slate-900 text-white space-y-8 rounded-t-[56px] shadow-2xl shrink-0">
-                <div className="space-y-4">
+              <div className="p-5 bg-slate-900 text-white space-y-4 border-t border-slate-700 shadow-2xl shrink-0 sticky bottom-0 z-20">
+                <div className="space-y-2">
                   <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500"><span>Taxable Value</span><span className="text-slate-300">Rs. {totals.subtotal.toFixed(2)}</span></div>
                   
                   {activeOutlet?.gst_registered && Object.entries(totals.taxBreakup).map(([rate, vals]: [string, any]) => (
@@ -883,11 +935,11 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                     </div>
                   ))}
 
-                  {activeOutlet?.gst_registered && <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 pt-2 border-t border-white/5"><span>Total Tax Aggregates</span><span className="text-slate-300">Rs. {totals.totalTax.toFixed(2)}</span></div>}
+                  {activeOutlet?.gst_registered && <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 pt-2 border-t border-white/5"><span>Total Tax</span><span className="text-slate-300">Rs. {totals.totalTax.toFixed(2)}</span></div>}
                   <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500"><span>Round-off</span><span className={totals.roundOff < 0 ? 'text-rose-400' : 'text-emerald-400'}>Rs. {totals.roundOff.toFixed(2)}</span></div>
                 </div>
-                <div className="flex justify-between items-end pt-8 border-t border-white/10">
-                  <div><p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Grand Payable</p><span className="font-black text-5xl text-orange-500 tracking-tighter">Rs. {totals.grandTotal}</span></div>
+                <div className="flex justify-between items-end pt-4 border-t border-white/10">
+                  <div><p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Grand Payable</p><span className="font-black text-3xl text-orange-500 tracking-tighter">Rs. {totals.grandTotal}</span></div>
                   <div className="flex flex-col items-end gap-2">
                     <div className={`flex items-center gap-2 px-3 py-1 rounded-lg border ${isOnline ? 'border-emerald-500/20 text-emerald-500' : 'border-rose-500/20 text-rose-500'}`}>{isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}<span className="text-[9px] font-black uppercase">{isOnline ? 'Sync' : 'Local'}</span></div>
                     {printerStatus && (
@@ -902,7 +954,7 @@ const POS: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ or
                 <button 
                   onClick={handleFinalizeAndPrint} 
                   disabled={cart.length === 0 || isProcessing || !selectedMop} 
-                  className="w-full py-7 bg-emerald-600 text-white rounded-[36px] font-black uppercase tracking-widest text-base shadow-2xl shadow-emerald-900/40 flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-30 disabled:grayscale touch-manipulation"
+                  className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-xl shadow-emerald-900/30 flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-30 disabled:grayscale touch-manipulation"
                 >
                   {isProcessing ? <Loader2 className="animate-spin" size={24} /> : (
                     <>
