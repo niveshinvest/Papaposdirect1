@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, Search, Edit2, Trash2, X, Image as ImageIcon, 
   Utensils, FileSpreadsheet, Upload, Download, CheckCircle, 
-  AlertCircle, Loader2, Tag, ChevronRight, Layers, Leaf, Save,
+  AlertCircle, Loader2, Tag, ChevronRight, Layers as LayersIcon, Leaf, Save,
   LayoutGrid, List, Sparkles, Wand2, Power, PowerOff, Info,
   Check, Filter, ArrowUpDown, Percent, IndianRupee, Settings2
 } from 'lucide-react';
@@ -287,7 +287,7 @@ const MenuManagement: React.FC<MenuManagementProps> = ({ activeOutlet }) => {
                 <List size={18} />
               </button>
            </div>
-           <button onClick={() => setIsCategoryModalOpen(true)} className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-2xl font-bold shadow-sm hover:bg-slate-50 transition-all shrink-0"><Layers size={18} /> Sections</button>
+           <button onClick={() => setIsCategoryModalOpen(true)} className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-2xl font-bold shadow-sm hover:bg-slate-50 transition-all shrink-0"><LayersIcon size={18} /> Sections</button>
            <button onClick={() => { setImportStep('upload'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-white border border-emerald-200 text-emerald-600 px-6 py-3 rounded-2xl font-bold shadow-sm hover:bg-emerald-50 transition-all shrink-0"><FileSpreadsheet size={18} /> Bulk</button>
            <button onClick={() => { setEditingItem(null); setItemFormData({ name: '', base_price: 0, category_id: '', is_active: true, description: '', image_url: '', is_veg: true, tax_percentage: 5, price_includes_tax: false, modifiers: [] }); setIsItemModalOpen(true); }} className="bg-[#FF6B00] text-white px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:scale-105 transition-all shrink-0">+ Add Item</button>
         </div>
