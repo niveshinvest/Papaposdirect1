@@ -31,7 +31,7 @@ import { getDatabaseVersion, applyMigration, getMigrationFile } from '../src/ser
 import { syncService } from '../src/services/syncService';
 import { sessionService } from '../src/services/sessionService';
 import { db } from '../src/services/db';
-import { Store, ChevronDown, Loader2, ShieldAlert, Building2 } from 'lucide-react';
+import { Store, ChevronDown, Loader2, ShieldAlert, Building2, ChevronRight } from 'lucide-react';
 
 const MANAGEMENT_ROLES = ['OWNER', 'ADMIN'] as const;
 
@@ -102,6 +102,11 @@ const Layout: FC<{
   const navigate = useNavigate();
   const canSwitchCompany = MANAGEMENT_ROLES.includes((user?.role || '').toUpperCase() as any);
   const canSwitchOutlet = outlets.length > 1;
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(view === ViewMode.POS);
+
+  useEffect(() => {
+    setIsSidebarCollapsed(view === ViewMode.POS);
+  }, [view]);
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
@@ -110,10 +115,19 @@ const Layout: FC<{
         onViewChange={(v) => navigate(`/${v.toLowerCase()}`)} 
         org={org} 
         user={user} 
+        collapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
       />
-      <div className="flex-1 md:ml-64 bg-slate-50 min-h-screen flex flex-col">
+      <div className={`flex-1 bg-slate-50 min-h-screen flex flex-col transition-all duration-300 ${isSidebarCollapsed ? 'md:ml-20' : 'md:ml-64'}`}>
         <header className="h-16 border-b bg-white/80 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-[100]">
            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+                className="hidden md:flex items-center gap-1 px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors"
+                title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                <ChevronRight size={14} className={`${isSidebarCollapsed ? '' : 'rotate-180'} transition-transform`} />
+              </button>
               <h1 className="font-black text-slate-800 uppercase tracking-tighter text-sm hidden lg:block">{view.replace(/_/g, ' ')}</h1>
               
               {/* Company Switcher */}
