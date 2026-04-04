@@ -5,7 +5,7 @@ import {
   Save, Camera, Trash2, Plus, Banknote, CreditCard as CardIcon, 
   Smartphone as UpiIcon, Check, Zap, Database, RefreshCw, 
   HardDrive, Shield, Cloud, Link, AlertTriangle, CheckCircle2, Loader2, FileCode, Server,
-  Printer as PrinterIcon, Network, Bluetooth, Usb, Edit2, X, Search, Cpu, Activity, Clock, ArrowUpCircle, Layers, MoveRight, LogOut, ShieldCheck, Wifi, Cable,
+  Printer as PrinterIcon, Network, Bluetooth, Usb, Edit2, X, Search, Cpu, Activity, Clock, ArrowUpCircle, Layers as LayersIcon, MoveRight, LogOut, ShieldCheck, Wifi, Cable,
   ChevronRight, Bell, Mail, MessageSquare, BrainCircuit, ShieldAlert, Wallet, ListFilter
 } from 'lucide-react';
 import { Organization, PrinterConfig, Outlet, NotificationPrefs, PaymentMode, PaymentModeType, AIProvider } from '../types';
@@ -620,7 +620,7 @@ const Settings: React.FC<SettingsProps> = ({ org, onUpdateOrg, onClearCache, act
                        <div className={`p-3 rounded-2xl ${mop.is_active ? 'bg-white shadow-sm' : 'bg-gray-100 text-gray-400'}`}>
                           {mop.type === 'CASH' ? <Banknote size={20} className="text-green-600" /> : 
                            mop.type === 'CARD' ? <CardIcon size={20} className="text-blue-600" /> : 
-                           mop.type === 'DIGITAL' ? <Wallet size={20} className="text-purple-600" /> : <Layers size={20} />}
+                           mop.type === 'DIGITAL' ? <Wallet size={20} className="text-purple-600" /> : <LayersIcon size={20} />}
                        </div>
                        <div>
                           <p className="font-black text-slate-800 text-sm">{mop.name}</p>
