@@ -1,0 +1,28 @@
+{
+  "name": "papapos-backend",
+  "scripts": {
+    "dev": "ts-node-dev server.ts",
+    "server": "tsx server.ts",
+    "server1": "nodemon --watch . --ext ts,json --exec tsx server.ts",
+    "build": "tsc",
+    "check:api-filters": "node ./scripts/check_api_filters.js",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2",
+    "cors": "^2",
+    "dotenv": "^16",
+    "express": "^4",
+    "fido2-lib": "^3.4.0",
+    "ioredis": "^5.10.1",
+    "jsonwebtoken": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.25",
+    "@types/node": "^25.5.0",
+    "ts-node-dev": "^2",
+    "typescript": "^5"
+  }
+}

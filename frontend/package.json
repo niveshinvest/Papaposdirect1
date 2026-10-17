@@ -1,0 +1,55 @@
+{
+  "name": "papapos",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "server": "tsx server.ts",
+    "server1": "nodemon --watch . --ext ts,json --exec tsx server.ts",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^1.34.0",
+    "@supabase/supabase-js": "^2.45.1",
+    "@tailwindcss/vite": "^4.2.2",
+    "@tanstack/react-query": "^5.1.0",
+    "@tanstack/react-table": "^8.8.0",
+    "cors": "^2.8.6",
+    "dexie": "^4.0.1",
+    "dexie-react-hooks": "^1.1.1",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "framer-motion": "^11.11.17",
+    "lucide-react": "^0.562.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.3",
+    "recharts": "^2.12.7",
+    "tailwindcss": "^4.2.2",
+    "tsx": "^4.21.0",
+    "uuid": "^13.0.0",
+    "xlsx": "0.18.5",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.13"
+  },
+  "devDependencies": {
+    "@tailwindcss/oxide-win32-x64-msvc": "^4.2.4",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.14.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.27",
+    "nodemon": "^3.1.14",
+    "postcss": "^8.5.8",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

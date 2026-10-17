@@ -1,0 +1,23 @@
+name: Check API Filters
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+
+jobs:
+  api-filters:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install dependencies (backend)
+        working-directory: ./backend
+        run: npm ci
+      - name: Run API filters check
+        working-directory: ./backend
+        run: npm run check:api-filters

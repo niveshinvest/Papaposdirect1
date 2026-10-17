@@ -1,0 +1,1524 @@
+import React, { useState, useEffect, useMemo } from 'react';
+
+// KEEP YOUR EXISTING IMPORTS
+import MenuGrid from '../components/MenuGrid';
+import Cart from '../components/Cart';
+import PaymentBar from '../components/PaymentBar';
+import TableSelector from "../modules/table/TableSelector.tsx";
+import { usePosStore } from '../store/posStore';
+
+import { MenuItem, Table, OrderType, Invoice, CartItem, PaymentMode, Modifier } from '../../types';
+import { 
+  ShoppingCart, Search, Trash2, Plus, Minus, Receipt, 
+  X, Utensils, Info, WifiOff, Wifi,
+  MonitorPlay, ChevronRight, Check, AlertCircle, Loader2,
+  ChevronLeft, ShoppingBag, Printer, QrCode, User, CreditCard, Wallet, Banknote,
+  Settings2, Mic, MicOff, Sparkles, Maximize, Minimize
+} from 'lucide-react';
+import { salesService } from '../../services/salesService';
+import { kitchenService } from '../../services/kitchenService';
+import { recipeService } from '../../services/recipeService';
+import { sessionService } from '../../services/sessionService';
+import { paymentService, inventoryService } from '../../services/supabaseService';
+import { printerService, Printer as RegisteredPrinter, PrinterPreferences, DiscoveredDevice } from '../../services/printerService';
+import { db } from '../../services/db';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { processVoiceInput, VoiceCommand } from '../../services/voiceAssistantService';
+import { GeminiLiveService } from '../../services/GeminiLiveService';
+import { motion, AnimatePresence } from 'framer-motion';
+import { menuService, authService, getSupabase } from '../../services/supabaseService';
+import { PosPromotions, PromotionActionBar } from '../.././components/PosPromotions';
+import { promotionService } from '../../services/promotionService';
+import { calculatePromotionPricing } from '../../services/promotionEngine';
+import type { ComboRule, DiscountRule, ManualDiscountDraft, OfferRule, PromotionConfig } from '../../types/promotions';
+import { aiService } from '../../services/aiService';
+
+  // =========================
+  // KEEP ALL YOUR OLD STORE VALUES
+  // DO NOT RENAME ANYTHING
+  // =========================
+
+ /* const {
+    cart,
+    categories,
+    filteredItems,
+    selectedCategory,
+    searchQuery,
+    subtotal,
+    gstAmount,
+    finalTotal,
+
+    // EXISTING HANDLERS
+    setSearchQuery,
+    setSelectedCategory,
+    addToCart,
+    removeItem,
+    increaseQty,
+    decreaseQty,
+    handleFinalizeAndPrint,
+    handleGenerateKOT,
+    handleHoldOrder,
+
+    // KEEP ANYTHING ELSE FROM YOUR EXISTING STORE
+  } = usePosStore();
+*/
+
+  // =========================
+  // KEEP ALL OLD LOCAL STATES
+  // =========================
+
+
+
+  // --- Price Integrity Contract ---
+  interface ValidatedCartItem {
+    line_id: string;
+    id: string;
+    name: string;
+    category?: string;
+    unit_price: number; // Sanitized, base price
+    quantity: number;
+    tax_percentage: number;
+    price_includes_tax: boolean;
+    hsn_code: string;
+    total_price: number; // Derived: (unit_price + modifiers_sum) * quantity
+    selected_modifiers?: Modifier[];
+    combo_id?: string;
+    combo_instance_id?: string;
+    combo_group_id?: string;
+    combo_label?: string;
+  }
+  
+  const PosScreen: React.FC<{ org: any; activeOutlet?: any; currentUser?: any }> = ({ org, activeOutlet, currentUser }) => {
+   
+
+    const ORDER_TYPE_STORAGE_KEY = 'papapos.pos.order_type';
+    // UI State
+    const [isCartOpen, setIsCartOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState('All');
+    const [orderType, setOrderType] = useState<OrderType>(() => {
+      try {
+        if (typeof window === 'undefined') return 'DINE_IN';
+        const raw = window.localStorage.getItem(ORDER_TYPE_STORAGE_KEY);
+        if (raw === 'DINE_IN' || raw === 'TAKEAWAY' || raw === 'DELIVERY') return raw;
+      } catch (e) {
+        console.warn('Failed to read order type preference:', e);
+      }
+      return 'DINE_IN';
+    });
+    const [selectedTable, setSelectedTable] = useState<Table | null>(null);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [isOnline, setIsOnline] = useState(navigator.onLine);
+    const [showTableSelector, setShowTableSelector] = useState(false);
+    const [showPaymentPicker, setShowPaymentPicker] = useState(false);
+    const [priceError, setPriceError] = useState<string | null>(null);
+    const [paperWidth, setPaperWidth] = useState<string>('80mm');
+    const [showPrintPreview, setShowPrintPreview] = useState(false);
+    const [isCatalogOpen, setIsCatalogOpen] = useState(true);
+    const [isDesktopCategoryOpen, setIsDesktopCategoryOpen] = useState(true);
+    const [printerStatus, setPrinterStatus] = useState<{ available: boolean; name: string; type: string } | null>(null);
+    const [printReady, setPrintReady] = useState(false);
+    const [registeredPrinters, setRegisteredPrinters] = useState<RegisteredPrinter[]>([]);
+    const [systemPrinters, setSystemPrinters] = useState<DiscoveredDevice[]>([]);
+    const [printPreferences, setPrintPreferences] = useState<PrinterPreferences>({
+      outlet_id: '',
+      bill_printer_ids: [],
+      bill_paper_size: null,
+      bill_auto_print: false,
+      kot_printer_ids: [],
+      kot_paper_size: null,
+      kot_auto_print: true,
+    });
+    const printCapabilities = printerService.getDirectPrintCapabilities();
+    const [localPrintAgent, setLocalPrintAgent] = useState<{ available: boolean; message?: string }>({ available: false });
+    const directPrintAvailable = printCapabilities.directPrintSupported || localPrintAgent.available;
+    const [modifierItem, setModifierItem] = useState<any | null>(null);
+    const [tempSelectedModifiers, setTempSelectedModifiers] = useState<Modifier[]>([]);
+  
+    // Voice Assistant State
+    const [isListening, setIsListening] = useState(false);
+    const [isPWA, setIsPWA] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+  
+    const toggleFullscreen = () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().then(() => setIsFullscreen(true));
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().then(() => setIsFullscreen(false));
+        }
+      }
+    };
+    const [isConversationActive, setIsConversationActive] = useState(false);
+    const [voiceTranscript, setVoiceTranscript] = useState('');
+    const [aiStatus, setAiStatus] = useState<{ message: string; type: 'info' | 'success' | 'error' | 'warning' } | null>(null);
+    const [currentVoiceState, setCurrentVoiceState] = useState<'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'EXECUTING' | 'WAITING_FOR_CONFIRMATION' | 'EXITING'>('IDLE');
+    const [lastInteractionTime, setLastInteractionTime] = useState(Date.now());
+    const [liveService, setLiveService] = useState<GeminiLiveService | null>(null);
+  
+    const toggleModifier = (mod: Modifier) => {
+      setTempSelectedModifiers(prev => 
+        prev.find(m => m.id === mod.id) 
+          ? prev.filter(m => m.id !== mod.id) 
+          : [...prev, mod]
+      );
+    };
+    
+    // Payment State
+    const [paymentModes, setPaymentModes] = useState<PaymentMode[]>([]);
+    const [selectedMop, setSelectedMop] = useState<PaymentMode | null>(null);
+  
+    // E-Invoice / Compliance State
+    const [buyerGstin, setBuyerGstin] = useState('');
+    const [buyerName, setBuyerName] = useState('');
+    const [buyerState, setBuyerState] = useState(activeOutlet?.gst_state_code || activeOutlet?.state_code || '27');
+    const [lastInvoice, setLastInvoice] = useState<any>(null);
+  
+    // --- Cart State ---
+    const [cart, setCart] = useState<ValidatedCartItem[]>([]);
+    const [activeDiscounts, setActiveDiscounts] = useState<DiscountRule[]>([]);
+    const [activeOffers, setActiveOffers] = useState<OfferRule[]>([]);
+    const [activeCombos, setActiveCombos] = useState<ComboRule[]>([]);
+    const [promotionConfig, setPromotionConfig] = useState<PromotionConfig>({
+      max_manual_discount_percent: 20,
+      allowed_manual_discount_types: ['FLAT', 'PERCENTAGE'],
+      allow_cashier_manual_discount: false,
+    });
+    const [selectedOfferIds, setSelectedOfferIds] = useState<string[]>([]);
+    const [manualDiscount, setManualDiscount] = useState<ManualDiscountDraft | null>(null);
+    const [promotionModal, setPromotionModal] = useState<'combos' | 'offers' | 'discount' | null>(null);
+    const showPromotionBox = activeCombos.length > 0 || activeOffers.length > 0 || activeDiscounts.length > 0;
+  
+    useEffect(() => {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+      setIsPWA(!!isStandalone);
+  
+      const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+        if (cart.length > 0) {
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      };
+  
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [cart]);
+  
+    useEffect(() => {
+      let cancelled = false;
+  
+      const bootAIGreeting = async () => {
+        if (!activeOutlet?.id) return;
+        const killSwitchActive = await aiService.checkKillSwitch();
+        if (cancelled || killSwitchActive) return;
+        setAiStatus({
+          message: `PapaPOS AI ready for ${activeOutlet.name}. I can help you navigate, search, open cart, payments, and tables.`,
+          type: 'info'
+        });
+      };
+  
+      bootAIGreeting();
+      return () => {
+        cancelled = true;
+      };
+    }, [activeOutlet?.id]);
+  
+    // Offline-First Data (Dexie)
+    const menuItems = useLiveQuery(() => 
+      activeOutlet ? db.menu.where('outlet_id').equals(activeOutlet.id).toArray() : Promise.resolve([]), 
+      [activeOutlet?.id]
+    ) || [];
+  
+    const categories = useLiveQuery(() => 
+      activeOutlet ? db.categories.where('outlet_id').equals(activeOutlet.id).toArray() : Promise.resolve([]),
+      [activeOutlet?.id]
+    ) || [];
+  
+    const tables = useLiveQuery(() => 
+      activeOutlet ? db.floor_tables.where('outlet_id').equals(activeOutlet.id).toArray() : Promise.resolve([]),
+      [activeOutlet?.id]
+    ) || [];
+  
+    useEffect(() => {
+      const handleOnline = () => setIsOnline(true);
+      const handleOffline = () => setIsOnline(false);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      if (orderType !== 'DINE_IN') setSelectedTable(null);
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      };
+    }, [orderType]);
+  
+    useEffect(() => {
+      try {
+        if (typeof window === 'undefined') return;
+        window.localStorage.setItem(ORDER_TYPE_STORAGE_KEY, orderType);
+      } catch (e) {
+        console.warn('Failed to persist order type preference:', e);
+      }
+    }, [ORDER_TYPE_STORAGE_KEY, orderType]);
+  
+    useEffect(() => {
+      if (activeOutlet) {
+        loadPaymentModes();
+      }
+    }, [activeOutlet]);
+  
+    useEffect(() => {
+      let isMounted = true;
+  
+      const loadPrinterSetup = async () => {
+        if (!activeOutlet?.id) {
+          if (!isMounted) return;
+          setRegisteredPrinters([]);
+          setSystemPrinters([]);
+          setPrintPreferences({
+            outlet_id: '',
+            bill_printer_ids: [],
+            bill_paper_size: null,
+            bill_auto_print: false,
+            kot_printer_ids: [],
+            kot_paper_size: null,
+            kot_auto_print: true,
+          });
+          return;
+        }
+  
+        try {
+          const [printers, prefs, discoveredSystemPrinters] = await Promise.all([
+            printerService.fetchPrinters(activeOutlet.id),
+            printerService.fetchPrinterPreferences(activeOutlet.id),
+            printerService.getSystemPrinters(),
+          ]);
+  
+          const agentStatus = printCapabilities.platform === 'BROWSER'
+            ? await printerService.getLocalPrintAgentStatus()
+            : { available: false, message: '' };
+  
+          if (!isMounted) return;
+          setRegisteredPrinters(printers);
+          setSystemPrinters(discoveredSystemPrinters);
+          setLocalPrintAgent({ available: Boolean(agentStatus.available), message: agentStatus.message });
+          setPrintPreferences(prefs);
+          setPaperWidth((prefs.bill_paper_size || '80mm') as any);
+        } catch (error) {
+          console.error('Printer setup load failure:', error);
+        }
+      };
+  
+      loadPrinterSetup();
+  
+      return () => {
+        isMounted = false;
+      };
+    }, [activeOutlet?.id]);
+  
+    useEffect(() => {
+      let isMounted = true;
+  
+      const loadPromotions = async () => {
+        if (!activeOutlet?.id) {
+          if (isMounted) {
+            setActiveDiscounts([]);
+            setActiveOffers([]);
+            setActiveCombos([]);
+          }
+          return;
+        }
+  
+        try {
+          const payload = await promotionService.loadActivePromotions(activeOutlet.id);
+          if (!isMounted) return;
+          setActiveDiscounts(payload.discounts);
+          setActiveOffers(payload.offers);
+          setActiveCombos(payload.combos);
+          setPromotionConfig(payload.config);
+        } catch (error) {
+          console.error('Promotion load failure:', error);
+        }
+      };
+  
+      loadPromotions();
+  
+      return () => {
+        isMounted = false;
+      };
+    }, [activeOutlet?.id]);
+  
+    const loadPaymentModes = async () => {
+      try {
+        const modes = await paymentService.fetchActiveModes(activeOutlet.id);
+        setPaymentModes(modes);
+        const defaultMode = modes?.find(m => m.is_default);
+        if (defaultMode) setSelectedMop(defaultMode);
+        else if (modes?.length > 0) setSelectedMop(modes[0]);
+      } catch (e) {
+        console.error("MOP Load Failure:", e);
+      }
+    };
+  
+    const addToCart = (
+      item: any,
+      selectedMods: Modifier[] = [],
+      promotionMeta?: Pick<ValidatedCartItem, 'combo_id' | 'combo_instance_id' | 'combo_group_id' | 'combo_label'>
+    ) => {
+      const rawPrice = item.base_price ?? item.price;
+      const sanitizedPrice = Number(
+        typeof rawPrice === 'string'
+          ? rawPrice.replace(/[^\d.]/g, '')
+          : rawPrice
+      );
+  
+      if (!Number.isFinite(sanitizedPrice) || sanitizedPrice <= 0) {
+        setPriceError(`Configuration Error: "${item.name}" has an invalid price.`);
+        setTimeout(() => setPriceError(null), 3000);
+        return;
+      }
+  
+      // Determine effective modifiers: item-level first, fallback to category if item inherits
+      const itemLevelMods = Array.isArray(item.modifiers) ? item.modifiers : [];
+      let effectiveMods = itemLevelMods;
+  
+      if ((!effectiveMods || effectiveMods.length === 0) && (item.apply_category_modifiers !== false)) {
+        const cat = categories?.find(c => c.id === item.category_id || c.name === item.category || (item.menu_categories && item.menu_categories.name === c.name));
+        const catMods = cat && Array.isArray(cat.modifiers) ? cat.modifiers : [];
+        if (catMods.length > 0) effectiveMods = catMods;
+      }
+  
+      // If effective modifiers exist and none are passed, open modal with merged modifiers
+      if (effectiveMods && effectiveMods.length > 0 && selectedMods.length === 0 && !modifierItem) {
+        // Present an item object that includes the effective modifiers so modal renders correctly
+        const modalItem = { ...item, modifiers: effectiveMods };
+        setModifierItem(modalItem);
+        setTempSelectedModifiers([]);
+        return;
+      }
+  
+      const modifierPriceSum = selectedMods.reduce( 
+        (sum, mod) => sum + Number(mod.price || 0),
+        0
+      );
+  
+  
+      const effectiveUnitPrice = sanitizedPrice + modifierPriceSum;
+  
+      setCart(prev => {
+        // For items with modifiers, we treat them as unique entries if modifiers differ
+        const existing = prev.find(i => 
+          i.id === item.id && 
+          JSON.stringify(i.selected_modifiers || []) === JSON.stringify(selectedMods) &&
+          i.combo_instance_id === promotionMeta?.combo_instance_id &&
+          i.combo_group_id === promotionMeta?.combo_group_id
+        );
+  
+        if (existing) {
+          return prev.map(i => (i.id === item.id && JSON.stringify(i.selected_modifiers || []) === JSON.stringify(selectedMods) && i.combo_instance_id === promotionMeta?.combo_instance_id && i.combo_group_id === promotionMeta?.combo_group_id)
+            ? { ...i, quantity: i.quantity + 1, total_price: effectiveUnitPrice * (i.quantity + 1) } 
+            : i
+          );
+        }
+  
+        const newItem: ValidatedCartItem = {
+          line_id: crypto.randomUUID(),
+          id: item.id,
+          name: item.name,
+          category: item.menu_categories?.name || item.category,
+          unit_price: sanitizedPrice,
+          quantity: 1,
+          tax_percentage: Number(item.tax_percentage ?? item.gst_rate ?? 5),
+          //price_includes_tax: Boolean(item.price_includes_tax ?? item.is_tax_inclusive ?? false),
+          price_includes_tax: activeOutlet?.is_tax_inclusive ?? false,
+          hsn_code: String(item.hsn_code || '9963'),
+          total_price: effectiveUnitPrice,
+          selected_modifiers: selectedMods.length > 0 ? selectedMods : undefined,
+          ...promotionMeta,
+        };
+        return [...prev, newItem];
+      });
+      
+      setModifierItem(null);
+      setTempSelectedModifiers([]);
+      if (window.innerWidth > 1024 && !isCartOpen) setIsCartOpen(true);
+    };
+  
+    const startListening = () => {
+      aiService.checkKillSwitch().then(isDisabled => {
+        if (isDisabled) {
+          setAiStatus({ message: 'AI is disabled by the owner kill switch.', type: 'warning' });
+          return;
+        }
+  
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+          alert("Speech recognition is not supported in this browser.");
+          return;
+        }
+  
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+  
+        recognition.lang = 'en-IN';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+        recognition.continuous = true;
+  
+        recognition.onstart = () => {
+          setIsListening(true);
+          setCurrentVoiceState('LISTENING');
+          setAiStatus({ message: "Say 'Hey Papa' to start...", type: 'info' });
+        };
+  
+        recognition.onresult = async (event: any) => {
+          const result = event.results[event.results.length - 1];
+          const transcript = result[0].transcript.trim().toLowerCase();
+  
+          if (transcript.includes('hey papa')) {
+            recognition.stop();
+            startGeminiLive();
+          }
+        };
+  
+        recognition.onerror = (event: any) => {
+          console.error("Wake word recognition error:", event.error);
+          setIsListening(false);
+          setAiStatus({ message: `Error: ${event.error}`, type: 'error' });
+        };
+  
+        recognition.onend = () => {
+          if (!liveService && isListening) {
+            setIsListening(false);
+            setCurrentVoiceState('IDLE');
+          }
+        };
+  
+        recognition.start();
+      });
+    };
+  
+    const stopListening = () => {
+      if (liveService) {
+        liveService.disconnect();
+        setLiveService(null);
+      }
+      setIsListening(false);
+      setCurrentVoiceState('IDLE');
+      setAiStatus(null);
+    };
+  
+    useEffect(() => {
+      return () => {
+        if (liveService) liveService.disconnect();
+      };
+    }, [liveService]);
+  
+    const startGeminiLive = async () => {
+      if (await aiService.checkKillSwitch()) {
+        setAiStatus({ message: 'AI is disabled by the owner kill switch.', type: 'warning' });
+        return;
+      }
+  
+      const service = new GeminiLiveService(menuItems, {
+        onStatusChange: (status) => {
+          setAiStatus({ message: status, type: 'info' });
+          if (status === 'Listening...') setCurrentVoiceState('LISTENING');
+        },
+        onTranscript: (text, isUser) => {
+          if (isUser) setVoiceTranscript(text);
+        },
+        onToolCall: (name, args) => {
+          handleLiveToolCall(name, args);
+        },
+        onError: (error) => {
+          setAiStatus({ message: error, type: 'error' });
+          setIsListening(false);
+        },
+        onClose: () => {
+          setIsListening(false);
+          setCurrentVoiceState('IDLE');
+          setLiveService(null);
+        }
+      });
+  
+      setLiveService(service);
+      service.connect();
+    };
+  
+    const handleLiveToolCall = (name: string, args: any) => {
+      setCurrentVoiceState('EXECUTING');
+      
+      switch (name) {
+        case 'addItem':
+          const itemToAdd = menuItems.find(i => i.name.toLowerCase() === args.name.toLowerCase());
+          if (itemToAdd) {
+            const qty = args.quantity || 1;
+            for (let i = 0; i < qty; i++) addToCart(itemToAdd);
+            setAiStatus({ message: `Added ${qty} ${itemToAdd.name}`, type: 'success' });
+          }
+          break;
+        case 'removeItem':
+          const itemToRemove = menuItems.find(i => i.name.toLowerCase() === args.name.toLowerCase());
+          if (itemToRemove) {
+            const cartItem = cart.find(i => i.id === itemToRemove.id);
+            if (cartItem) updateQuantity(itemToRemove.id, -cartItem.quantity, cartItem.selected_modifiers);
+            setAiStatus({ message: `Removed ${itemToRemove.name}`, type: 'success' });
+          }
+          break;
+        case 'updateQuantity':
+          const itemToUpdate = menuItems.find(i => i.name.toLowerCase() === args.name.toLowerCase());
+          if (itemToUpdate) {
+            const cartItem = cart.find(i => i.id === itemToUpdate.id);
+            if (cartItem) {
+              const delta = args.quantity - cartItem.quantity;
+              updateQuantity(itemToUpdate.id, delta, cartItem.selected_modifiers);
+              setAiStatus({ message: `Updated ${itemToUpdate.name} to ${args.quantity}`, type: 'success' });
+            }
+          }
+          break;
+        case 'confirmBill':
+          handleFinalizeAndPrint();
+          break;
+        case 'openCart':
+          setIsCartOpen(true);
+          setAiStatus({ message: 'Opened the cart for you.', type: 'success' });
+          break;
+        case 'openPayments':
+          setShowPaymentPicker(true);
+          setAiStatus({ message: 'Opened payment mode picker.', type: 'success' });
+          break;
+        case 'showTables':
+          setOrderType('DINE_IN');
+          setShowTableSelector(true);
+          setAiStatus({ message: 'Showing table selector.', type: 'success' });
+          break;
+        case 'focusSearch':
+          setSearchQuery(String(args?.query || ''));
+          setAiStatus({ message: `Searching for ${String(args?.query || 'items')}.`, type: 'success' });
+          break;
+      }
+    };
+    const updateQuantity = (id: string, delta: number, modifiers?: Modifier[], lineId?: string) => {
+      setCart(prev => prev.map(item => {
+        const match = lineId
+          ? item.line_id === lineId
+          : item.id === id && JSON.stringify(item.selected_modifiers || []) === JSON.stringify(modifiers || []);
+        if (match) {
+          const newQty = Math.max(0,item.quantity + delta);
+          const modifierPriceSum = (item.selected_modifiers || []).reduce((sum, mod) => sum + Number(mod.price || 0), 0);
+          const effectiveUnitPrice = item.unit_price + modifierPriceSum;
+          return { ...item, quantity: newQty, total_price: effectiveUnitPrice * newQty };
+        }
+        return item;
+      }).filter(i => i.quantity > 0));
+    };
+  
+    const validateCompliance = () => {
+      if (activeOutlet?.gst_registered && !activeOutlet?.gst_number) {
+        alert("Error: Outlet is GST registered but GSTIN is missing. Compliance blocked.");
+        return false;
+      }
+      if (!selectedMop) {
+        alert("Error: No Payment Mode selected. Please configure a default in settings.");
+        return false;
+      }
+      if (buyerGstin) {
+        const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+        if (!gstinRegex.test(buyerGstin)) {
+          alert("Error: Invalid Buyer GSTIN format.");
+          return false;
+        }
+      }
+      return true;
+    };
+  
+    const legacyTotals = useMemo(() => {
+      const outletState = activeOutlet?.gst_state_code || activeOutlet?.state_code || '27';
+      const destState = buyerState || outletState;
+      const gstRegistered = activeOutlet?.gst_registered ?? false;
+      
+      const processed = cart.map(item => {
+      return salesService.calculateItemGst(
+      {
+        ...item,
+        price: item.unit_price,          // 🔑 KEY FIX
+        base_price: item.unit_price,     // 🔑 BACKWARD COMPAT
+      } as any,
+      item.quantity,
+      outletState,
+      destState,
+      gstRegistered,
+      item.selected_modifiers
+    );
+  });
+      const subtotal = processed.reduce((acc, i) => acc + (i.taxable_value || 0), 0);
+      const cgst = processed.reduce((acc, i) => acc + (i.cgst_amount || 0), 0);
+      const sgst = processed.reduce((acc, i) => acc + (i.sgst_amount || 0), 0);
+      const igst = processed.reduce((acc, i) => acc + (i.igst_amount || 0), 0);
+      const totalTax = cgst + sgst + igst;
+      
+      // Grouped tax for breakup view
+      const taxBreakup: Record<number, { taxable: number, cgst: number, sgst: number, igst: number, totalTax: number }> = {};
+      processed.forEach(i => {
+        const rate = i.tax_percentage;
+        if (!taxBreakup[rate]) taxBreakup[rate] = { taxable: 0, cgst: 0, sgst: 0, igst: 0, totalTax: 0 };
+        taxBreakup[rate].taxable += i.taxable_value;
+        taxBreakup[rate].cgst += i.cgst_amount;
+        taxBreakup[rate].sgst += i.sgst_amount;
+        taxBreakup[rate].igst += i.igst_amount;
+        taxBreakup[rate].totalTax += (i.cgst_amount + i.sgst_amount + i.igst_amount);
+      });
+  
+      const rawGrandTotal = subtotal + totalTax;
+      const grandTotal = Math.round(rawGrandTotal);
+      const roundOff = grandTotal - rawGrandTotal;
+      const safeNum = (n: number) => isNaN(n) ? 0 : n;
+  
+      return { 
+        subtotal: safeNum(subtotal), 
+        cgst: safeNum(cgst), 
+        sgst: safeNum(sgst), 
+        igst: safeNum(igst),
+        totalTax: safeNum(totalTax), 
+        grandTotal: safeNum(grandTotal), 
+        roundOff: safeNum(roundOff),
+        itemCount: cart.reduce((acc, i) => acc + i.quantity, 0),
+        taxBreakup,
+        processedItems: processed
+      };
+    }, [cart, activeOutlet, buyerState]);
+  
+    void legacyTotals;
+  
+    const canApplyManualDiscount = useMemo(() => {
+      const role = String(currentUser?.role || '').toUpperCase();
+      return ['OWNER', 'ADMIN', 'MANAGER'].includes(role) || (promotionConfig.allow_cashier_manual_discount && role === 'CASHIER');
+    }, [currentUser?.role, promotionConfig.allow_cashier_manual_discount]);
+  
+    const handleAddCombo = (combo: ComboRule, selectedItems: Record<string, string[]>) => {
+      const comboInstanceId = crypto.randomUUID();
+      const missingChoiceGroup = combo.groups.find(group => group.mode === 'CHOICE' && (selectedItems[group.id] || []).length < group.required_quantity);
+      if (missingChoiceGroup) {
+        alert(`Select ${missingChoiceGroup.required_quantity} item(s) for ${missingChoiceGroup.label}.`);
+        return;
+      }
+  
+      combo.groups.forEach(group => {
+        const itemIds = group.mode === 'FIXED' ? (group.fixed_items || []) : (selectedItems[group.id] || []);
+        itemIds.slice(0, group.required_quantity || itemIds.length).forEach(itemId => {
+          const menuItem = menuItems.find(item => item.id === itemId);
+          if (!menuItem) return;
+          addToCart(menuItem, [], {
+            combo_id: combo.id,
+            combo_instance_id: comboInstanceId,
+            combo_group_id: group.id,
+            combo_label: combo.name,
+          });
+        });
+      });
+  
+      setPromotionModal(null);
+    };
+  
+    const totals = useMemo(() => {
+      const outletState = activeOutlet?.gst_state_code || activeOutlet?.state_code || '27';
+      const destState = buyerState || outletState;
+      const gstRegistered = activeOutlet?.gst_registered ?? false;
+  
+      return calculatePromotionPricing({
+        cart: cart.map(item => ({
+          line_id: item.line_id,
+          item_id: item.id,
+          name: item.name,
+          category: item.category,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_percentage: item.tax_percentage,
+          //price_includes_tax: item.price_includes_tax,
+          price_includes_tax: activeOutlet?.is_tax_inclusive ?? false,
+          hsn_code: item.hsn_code,
+          selected_modifiers: item.selected_modifiers,
+          combo_id: item.combo_id,
+          combo_instance_id: item.combo_instance_id,
+          combo_group_id: item.combo_group_id,
+          combo_label: item.combo_label,
+        })),
+        discounts: activeDiscounts,
+        offers: activeOffers,
+        combos: activeCombos,
+        manualDiscount: canApplyManualDiscount ? manualDiscount : null,
+        selectedOfferIds,
+        outletState,
+        destState,
+        gstRegistered,
+      });
+    }, [cart, activeOutlet, buyerState, activeDiscounts, activeOffers, activeCombos, manualDiscount, selectedOfferIds, canApplyManualDiscount]);
+  
+    const runtimePrintPreferences = useMemo(() => {
+      const browserAgentEnabled = localPrintAgent.available;
+      const base = printerService.applyRuntimePrintRestrictions(printPreferences, {
+        browserDirectPrintEnabled: browserAgentEnabled,
+      });
+  
+      const supportsBrowserDirectRole = (printerIds: string[]) => {
+        if (printCapabilities.platform !== 'BROWSER') return true;
+        if (!browserAgentEnabled) return false;
+        const printers = registeredPrinters.filter(printer => printer.id && printerIds.includes(printer.id));
+        return printers.every(printer => ['LAN', 'USB', 'SYSTEM'].includes(printer.printer_type));
+      };
+  
+      return {
+        ...base,
+        bill_auto_print: base.bill_auto_print && supportsBrowserDirectRole(base.bill_printer_ids),
+        kot_auto_print: base.kot_auto_print && supportsBrowserDirectRole(base.kot_printer_ids),
+      };
+    }, [localPrintAgent.available, printCapabilities.platform, printPreferences, registeredPrinters]);
+  
+    const selectedBillPrinters = useMemo(
+      () => registeredPrinters.filter(printer => printer.id && runtimePrintPreferences.bill_printer_ids.includes(printer.id)),
+      [registeredPrinters, runtimePrintPreferences.bill_printer_ids]
+    );
+  
+    const selectedKotPrinters = useMemo(
+      () => registeredPrinters.filter(printer => printer.id && runtimePrintPreferences.kot_printer_ids.includes(printer.id)),
+      [registeredPrinters, runtimePrintPreferences.kot_printer_ids]
+    );
+  
+    const resolvePrinterTargets = (printers: RegisteredPrinter[]) => printers
+      .map(printer => {
+        const matchedSystemPrinter = systemPrinters.find(systemPrinter =>
+          systemPrinter.name === printer.connection_hint ||
+          systemPrinter.name === printer.name ||
+          systemPrinter.technical_id === printer.connection_hint
+        );
+  
+        if (matchedSystemPrinter?.name) return matchedSystemPrinter.name;
+        if (printer.printer_type === 'SYSTEM') return printer.connection_hint || printer.name;
+        return printer.name || printer.connection_hint || '';
+      })
+      .filter(Boolean);
+  
+    const resolvePaperSize = (role: 'bill' | 'kot') => {
+      if (role === 'bill') return runtimePrintPreferences.bill_paper_size || '80mm';
+      return runtimePrintPreferences.kot_paper_size || '80mm';
+    };
+  
+    const availableBillPaperSizes = useMemo(() => {
+      const selectedNames = new Set(resolvePrinterTargets(selectedBillPrinters));
+      const sizes = systemPrinters
+        .filter(printer => selectedNames.size === 0 || selectedNames.has(printer.name))
+        .flatMap(printer => printer.paper_sizes || []);
+      const uniqueSizes = [...new Set(sizes.filter(Boolean))];
+      return uniqueSizes.length ? uniqueSizes : ['A4', 'A3', '58mm', '80mm', '85mm'];
+    }, [systemPrinters, selectedBillPrinters]);
+  
+    useEffect(() => {
+      const checkPrinter = async () => {
+        const status = await printerService.checkAvailability(resolvePrinterTargets(selectedBillPrinters)[0]);
+        setPrinterStatus(status);
+      };
+      checkPrinter();
+    }, [selectedBillPrinters, activeOutlet?.id]);
+  
+    // Race-condition safety: Ensure invoice is rendered before allowing print
+    useEffect(() => {
+      if (showPrintPreview) {
+        setPrintReady(false);
+        // Wait for DOM to settle
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            setPrintReady(true);
+          }, 500);
+        });
+      }
+    }, [showPrintPreview, lastInvoice]);
+  
+    const handlePrint = async (invoiceToPrint = lastInvoice, silent = false) => {
+     
+      if (!invoiceToPrint) return;
+     if (invoiceToPrint === lastInvoice && showPrintPreview && !printReady) return;
+  
+      const targets = selectedBillPrinters.length
+        ? selectedBillPrinters.map(printer => ({
+            printerName: resolvePrinterTargets([printer])[0],
+            printer,
+          }))
+        : [{ printerName: undefined, printer: null }];
+  
+      for (const target of targets) {
+        const result = await printerService.printInvoice(lastInvoice, { 
+          paperSize: resolvePaperSize('bill'),
+          silent,
+          printerName: target.printerName,
+          printer: target.printer,
+        });
+  
+        if (result.success) {
+          console.log(`Print Success: ${result.method} ${target.printerName || '[default]'}`);
+        } else {
+          alert(`Print Failed${target.printerName ? ` (${target.printerName})` : ''}: ${result.error}`);
+          break;
+        }
+      }
+    };
+  
+    const handleKotPrint = async (ticketPayload: any) => {
+      console.log("Printing KOT with payload:", ticketPayload);
+      const targets = selectedKotPrinters.length
+        ? selectedKotPrinters.map(printer => ({
+            printerName: resolvePrinterTargets([printer])[0],
+            printer,
+          }))
+        : [{ printerName: undefined, printer: null }];
+  
+      for (const target of targets) {
+        const result = await printerService.printKOT(ticketPayload, {
+          paperSize: resolvePaperSize('kot'),
+          silent: runtimePrintPreferences.kot_auto_print,
+          printerName: target.printerName,
+          printer: target.printer,
+        });
+  
+        if (!result.success) {
+          alert(`KOT Print Failed${target.printerName ? ` (${target.printerName})` : ''}: ${result.error}`);
+          break;
+        }
+      }
+    };
+  
+    const handleFinalizeAndPrint = async () => {
+      if (!activeOutlet || !currentUser) return alert("System state mismatch.");
+      if (orderType === 'DINE_IN' && !selectedTable) return alert("Select a table.");
+      if (cart.length === 0) return alert("Cart is empty.");
+      if (!validateCompliance()) return;
+  
+      setIsProcessing(true);
+      try {
+        const ctx = { company_id: currentUser.company_id, outlet_id: activeOutlet.id, staff_user_id: currentUser.id };
+        const invNo = `INV-${activeOutlet.short_code || 'POS'}-${Date.now()}`;
+        const invDate = new Date().toISOString();
+        const qrPayload = activeOutlet.gst_registered ? `${activeOutlet.gst_number}|${invNo}|${invDate.split('T')[0]}|${totals.grandTotal}|${totals.totalTax.toFixed(2)}|${buyerGstin || 'NA'}` : null;
+        
+        const orderData = { 
+          tableId: selectedTable?.name || orderType, 
+          orderType: orderType, 
+          items: totals.processedItems, 
+          subtotal: totals.subtotal, 
+          cgst: totals.cgst, 
+          sgst: totals.sgst, 
+          total: totals.grandTotal, 
+          discount_total: totals.discountTotal,
+          savings_total: totals.savingsTotal,
+          promotion_snapshot: totals.appliedPromotions,
+          status: 'completed' as const, 
+          timestamp: new Date() 
+        };
+  
+        const order = await db.createSyncableRecord(db.orders, orderData, ctx);
+        
+        const invoiceData: Invoice = { 
+          id: crypto.randomUUID(),
+          company_id: currentUser.company_id,
+          outlet_id: activeOutlet.id,
+          invoice_number: invNo, 
+          invoice_date: invDate, 
+          order_id: order.id, 
+          seller_gstin: activeOutlet.gst_number || 'UNREGISTERED', 
+          seller_legal_name: org.name, 
+          seller_trade_name: activeOutlet.name, 
+          seller_state_code: activeOutlet.gst_state_code || activeOutlet.state_code || '27', 
+          buyer_name: buyerName || 'Counter Customer', 
+          buyer_gstin: buyerGstin || "", 
+          buyer_state_code: buyerState, 
+          place_of_supply: buyerState, 
+          invoice_type: buyerGstin ? 'B2B' : 'B2C', 
+          billing_state_code: buyerState,
+          outlet_state_code: activeOutlet.gst_state_code || activeOutlet.state_code || '27',
+          taxable_value: totals.subtotal, 
+          subtotal: totals.subtotal,
+          cgst_total: totals.cgst, 
+          sgst_total: totals.sgst, 
+          igst_total: totals.igst, 
+          total_tax: totals.totalTax, 
+          round_off: totals.roundOff, 
+          grand_total: totals.grandTotal, 
+          discount_total: totals.discountTotal,
+          savings_total: totals.savingsTotal,
+          promotion_summary: totals.appliedPromotions,
+          payment_method: selectedMop?.name || 'Cash', 
+          payment_mode_id: selectedMop?.id,
+          payment_mode_name: selectedMop?.name,
+          finalized_by_user_id: currentUser.id,
+          finalized_at: invDate,
+          qr_payload: qrPayload || undefined, 
+          irp_status: 'NOT_GENERATED'
+        };
+  
+        const invoice = await db.createSyncableRecord(db.invoices, invoiceData, ctx);
+        
+        // SAVE INVOICE ITEMS TO DEXIE for cloud sync and local reporting
+        const invoiceItemRows = totals.processedItems.map(item => ({
+          id: crypto.randomUUID(),
+          invoice_id: invoice.id,
+          menu_item_id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          selected_modifiers: item.selected_modifiers,
+          taxable_value: item.taxable_value,
+          cgst_amount: item.cgst_amount,
+          sgst_amount: item.sgst_amount,
+          igst_amount: item.igst_amount,
+          total_amount: item.total_amount,
+          discount_amount: item.discount_amount || 0,
+          applied_promotions: item.applied_promotions || [],
+          company_id: currentUser.company_id,
+          outlet_id: activeOutlet.id,
+          sync_status: 'pending',
+          created_at: new Date()
+        }));
+  
+        await db.invoice_items.bulkPut(invoiceItemRows);
+  
+  
+  
+        // FIX START: INV-C-01 Automated Recipe Depletion
+        // Trigger background depletion to avoid blocking UI
+        depleteInventoryForOrder(totals.processedItems, activeOutlet.id, order.id);
+        // FIX END
+        const preparedInvoice = { ...invoice, items: totals.processedItems, taxBreakup: totals.taxBreakup };
+        
+  
+        
+        const kotItems = cart.map(i => ({
+          name: i.name,
+          quantity: i.quantity,
+          notes: '',
+          selected_modifiers: i.selected_modifiers,
+        }));
+        const kotPayload = {
+          order_id: order.id,
+          outlet_name: activeOutlet.name,
+          table_name: orderData.tableId,
+          created_at: invDate,
+          staff_name: currentUser.full_name || currentUser.name || 'Counter',
+          items: kotItems,
+        };
+  
+        setLastInvoice(preparedInvoice);
+        setPaperWidth(runtimePrintPreferences.bill_paper_size || '80mm');
+        setShowPrintPreview(!runtimePrintPreferences.bill_auto_print);
+  
+        if (runtimePrintPreferences.bill_auto_print) {
+          await handlePrint(preparedInvoice, true);
+        }
+  
+        if (isOnline) {
+          await kitchenService.createTicket({ 
+            order_id: order.id, 
+            outlet_id: activeOutlet.id, 
+            table_name: orderData.tableId, 
+            items: kotItems,
+          });
+        }
+         
+        //if (runtimePrintPreferences.kot_auto_print && kotItems.length > 0) {
+          await handleKotPrint(kotPayload);
+        //}
+  
+        setCart([]);
+        setSelectedTable(null);
+        setBuyerGstin('');
+        setBuyerName('');
+        setIsCartOpen(false);
+        
+      } catch (e: any) {
+        alert(`Finalization failed: ${e.message}`);
+      } finally {
+        setIsProcessing(false);
+      }
+    };
+  
+    const depleteInventoryForOrder = async (items: any[], outletId: string, orderId: string) => {
+      try {
+        for (const item of items) {
+          const recipe = await recipeService.getFinalizedRecipeByItemName(item.name, outletId);
+          if (recipe && recipe.recipe_json?.ingredients) {
+            for (const ing of recipe.recipe_json.ingredients) {
+              // Deduct from inventory: quantity * recipe_quantity
+              const totalDeduction = item.quantity * ing.quantity;
+              const targetId = (ing as any).inventory_id || ing.name;
+              await inventoryService.deductStock(
+                targetId, 
+                outletId, 
+                totalDeduction, 
+                `SALE: ${item.name}`,
+                { type: 'POS_SALE', id: orderId }
+              );
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[INVENTORY_DEPLETION] Failed to deplete stock:", e);
+      }
+    };
+  
+    const getMopIcon = (type: string) => {
+      switch (type) {
+        case 'CASH': return <Banknote size={16} />;
+        case 'CARD': return <CreditCard size={16} />;
+        case 'DIGITAL': return <Wallet size={16} />;
+        default: return <Receipt size={16} />;
+      }
+    };
+  
+    const filteredItems = menuItems.filter(item => 
+      item.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+      (selectedCategory === 'All' || item.category === selectedCategory)
+    );
+    const desktopCategoryList = useMemo(() => ['All', ...categories.map((c) => c.name)], [categories]);
+  
+  
+  // =========================
+  // KEEP ALL OLD EFFECTS
+  // =========================
+
+  // useEffect(...)
+
+  return (
+    <div className="h-screen w-full overflow-hidden bg-[#f5f7fb] text-slate-900">
+      <div className="flex h-full w-full">
+        {/* ========================= */}
+        {/* SIDEBAR */}
+        {/* ========================= */}
+         {/*
+        <aside className="hidden xl:flex w-24 flex-col items-center justify-between border-r border-slate-200 bg-[#0f172a] py-5">
+          <div className="flex flex-col items-center gap-4 w-full">
+           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-2xl font-black text-white shadow-2xl">
+              P
+            </div>
+
+            <div className="mt-5 flex w-full flex-col gap-3 px-3">
+              {['POS', 'Orders', 'Kitchen', 'Inventory', 'Analytics'].map(
+                (item, index) => (
+                  <button
+                    key={item}
+                    className={`group flex h-14 items-center justify-center rounded-2xl transition-all duration-200 ${
+                      index === 0
+                        ? 'bg-white text-slate-900 shadow-xl'
+                        : 'text-slate-400 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <span className="text-xs font-bold tracking-wide rotate-[-90deg]">
+                      {item}
+                    </span>
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        
+          <div className="flex flex-col items-center gap-3">
+            <div className="relative">
+              <img
+                src="https://api.dicebear.com/7.x/adventurer/svg?seed=manager"
+                className="h-12 w-12 rounded-2xl border border-white/10 bg-white"
+              />
+
+              <div className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#0f172a] bg-emerald-400" />
+            </div>
+          </div>
+
+         
+           </aside>
+          */}
+
+        {/* ========================= */}
+        {/* MAIN AREA */}
+        {/* ========================= */}
+
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        
+
+
+          <div className="flex min-h-0 flex-1 flex-col xl:flex-row overflow-hidden">
+            
+
+            <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+             
+             
+                    <div className="flex-1 overflow-auto p-3 sm:p-6">
+
+
+
+                {/* ========================= */}
+                       {/* SEARCH HEADER */}
+                  {/* ========================= */}
+
+
+              <header className=" border-b border-slate-200 bg-white px-4 sm:px-6 py-4 ">
+            <div className="flex flex-col gap-4 lg:flex-row   lg:items-center lg:justify-between">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-600">
+                  PapaPOS Terminal
+                </h1>
+
+                <p className="text-sm text-slate-500">
+                  Ultra-fast restaurant billing experience
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                {/* KEEP OLD SEARCH STATE + HANDLER */}
+                <div className="relative w-full sm:w-80">
+                  <input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search items, SKU, barcode..."
+                    className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 text-sm font-medium outline-none transition-all focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                  />
+                </div>
+
+                {/* KEEP OLD HANDLER */}
+                <button
+                  onClick={() => setShowTableSelector(true)}
+                  className="h-12 rounded-2xl bg-slate-900 px-6 text-sm font-bold text-white shadow-lg transition-all hover:scale-[1.02] hover:bg-black active:scale-[0.98]"
+                >
+                  New Order
+                </button>
+              </div>
+            </div>
+                 </header>
+
+              
+
+                 {/* ========================= */}
+                       {/* CATEGORY sidebar */}
+                  {/* 
+
+
+
+              <div className="overflow-x-auto border-b border-slate-200 bg-white px-3 sm:px-6 py-4">
+                <div className="flex gap-3 min-w-max">
+                  {categories?.map((category: any) => (
+                    <button
+                      key={category.id}
+                      onClick={() => setSelectedCategory(category.id)}
+                      className={`h-12 rounded-2xl px-5 text-sm font-bold whitespace-nowrap transition-all ${
+                        selectedCategory === category.id
+                          ? 'bg-slate-900 text-white shadow-lg'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      {category.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+========================= */}
+
+
+
+                 {/* ========================= */}
+                       {/* MENU GRID */}
+                 {/* ========================= */}
+
+                
+                
+                <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-2">
+                  {filteredItems?.map((item: any) => (
+                    <button
+                      key={item.id}
+                      onClick={() => addToCart(item)}
+                      className="group overflow-hidden rounded-3xl bg-white text-left shadow-sm ring-1 ring-slate-200 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl active:scale-[0.98]"
+                    >
+                      <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+                        <img
+                          src={item.image || item.image_url}
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                        />
+
+                        {item.tag && (
+                          <div className="absolute left-3 top-3 rounded-xl bg-black/75 px-3 py-1 text-[11px] font-bold tracking-wide text-white backdrop-blur-md">
+                            {item.tag}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="p-4 sm:p-5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-sm sm:text-base font-black leading-tight text-slate-900">
+                              {item.name}
+                            </h3>
+
+                            <p className="mt-1 text-xs text-slate-500">
+                              Fresh • Hygienic • Fast moving
+                            </p>
+                          </div>
+
+                          <div className="rounded-2xl bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-700">
+                            ₹{item.price}
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-between">
+                          <div className="flex items-center gap-1 text-amber-500">
+                            ★★★★★
+                          </div>
+
+                          <div className="rounded-2xl bg-indigo-600 px-4 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg transition-all group-hover:bg-indigo-700">
+                            Add
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+
+
+
+
+
+
+
+
+
+
+
+                    </div>
+            
+            </section>
+
+            {/* ========================= */}
+            {/* CART */}
+            {/* ========================= */}
+
+
+
+            <aside className="flex w-full xl:w-[420px] flex-col border-t xl:border-l xl:border-t-0 border-slate-200 bg-white">
+              <div className="border-b border-slate-200" p-5>
+                <div className="flex  flex-row  items-center justify-between">
+                  <div>
+                    <div className="p-0 border-b border-slate-300 shrink-0">
+                                    <div className="grid grid-cols-3 bg-slate-800 text-white text-center">
+                                      {[
+                                        { key: 'DINE_IN', label: 'DINE IN' },
+                                        { key: 'DELIVERY', label: 'DELIVERY' },
+                                        { key: 'TAKEAWAY', label: 'PICK UP' }
+                                      ].map(mode => (
+                                        <button
+                                          key={mode.key}
+                                          onClick={() => setOrderType(mode.key as OrderType)}
+                                          className={`py-4 font-black text-sm border-r border-slate-700 last:border-r-0 ${orderType === mode.key ? 'bg-orange-500 text-white' : 'text-slate-200 hover:bg-slate-700'}`}
+                                        >
+                                          {mode.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                     <div className="p-2 border-b flex justify-between items-center shrink-0">
+                                    <div className="flex items-center gap-4">
+                                      <div className="w-5 h-5 bg-orange-500 rounded-[24px] flex items-center justify-center text-white shadow-xl"><ShoppingBag size={30} /></div>
+                                      <div><h6 className="text-2xl font-black text-slate-900 tracking-tight leading-none">Checkout</h6><p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mt-1.5">{orderType} • {selectedTable?.name || 'Quick Sale'}</p></div>
+                                    
+                                    
+                                    
+                                    </div>
+                                    {/* <button onClick={() => setIsCatalogOpen((open) => !open)} className="flex items-center gap-2 px-5 py-4 bg-slate-50 hover:bg-slate-100 rounded-3xl text-slate-500 transition-all border border-slate-200 touch-manipulation">
+                                      {isCatalogOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+                                      <span className="text-[10px] font-black uppercase tracking-widest">{isCatalogOpen ? 'Hide Menu' : 'Show Menu'}</span>
+                                    </button> */}
+                    
+                                    <div className="ml-10  w-full flex-1 px-4 py-4 bg-slate-50  flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+                                        {getMopIcon(selectedMop?.type || 'CASH')}
+                                      </div>
+                                      <div>
+                                        <p className="text-[9px] font-black uppercase text-slate-400 leading-none mb-1">Pay Via</p>
+                                        <p className="font-black text-slate-900 text-sm leading-none">{selectedMop?.name || 'Select Mode'}</p>
+                                      </div>
+                                    </div>
+                                    <button 
+                                      onClick={() => setShowPaymentPicker(true)}
+                                      className="mr-0 px-4 py-2 bg-white border border-slate-200 rounded-xl font-black text-[9px] uppercase tracking-widest text-indigo-600 shadow-sm hover:bg-indigo-50 transition-all"
+                                    >
+                                      Change
+                                    </button>
+                                  </div>
+                                  </div>
+                  </div>
+
+                  
+                </div>
+              </div>
+
+<div className={`px-6 pt-4 sm:px-8 shrink-0 ${totals.savingsTotal <= 0 ? 'hidden' : ''}`}>
+                             
+                             
+                             
+                             
+                             
+                              <PromotionActionBar
+                                savingsTotal={totals.savingsTotal}
+                                appliedCount={totals.appliedPromotions.length}
+                                onOpen={mode => setPromotionModal(mode)}
+                              />
+                            </div>
+
+              {/* ========================= */}
+              {/* CART ITEMS */}
+              {/* ========================= */}
+
+               <div className="flex-1 min-h-0 overflow-y-auto p-6 sm:p-8 space-y-6 scrollbar-hide">
+                              {cart.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-30"><Utensils size={64} className="text-slate-300" /><p className="font-black text-xs uppercase tracking-widest">Cart is Empty</p></div> : cart.map((item) => (
+                                <div key={item.line_id} className="flex justify-between items-start animate-in slide-in-from-right-4 duration-300">
+                                  <div className="flex-1 min-w-0 pr-4">
+                                    <h5 className="font-black text-sm text-slate-800 truncate">{item.name}</h5>
+                                    {item.combo_label && <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mt-1">{item.combo_label}</p>}
+                                    {item.selected_modifiers && item.selected_modifiers.length > 0 && (
+                                      <p className="text-[10px] font-bold text-orange-500 uppercase tracking-widest mt-1">
+                                        + {item.selected_modifiers.map(m => m.name).join(', ')}
+                                      </p>
+                                    )}
+                                    <p className="text-[10px] font-black text-slate-400 uppercase mt-1">
+                                      Rs. {item.unit_price + (item.selected_modifiers || []).reduce((s, m) => s + m.price, 0)} @ {item.tax_percentage}% GST 
+                                      {activeOutlet?.is_tax_inclusive ? <span className="ml-1 text-emerald-600">(Incl)</span> : <span className="ml-1 text-orange-600">(Excl)</span>}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center">
+                                    <div className="flex items-center bg-slate-100 rounded-2xl p-1 shadow-inner">
+                                      <button onClick={() => updateQuantity(item.id, -1, item.selected_modifiers, item.line_id)} className="p-1 hover:bg-white rounded-2xl transition-all touch-manipulation"><Minus size={16} /></button>
+                                      <span className="w-12 text-center font-black text-base">{item.quantity}</span>
+                                      <button onClick={() => updateQuantity(item.id, 1, item.selected_modifiers, item.line_id)} className="p-1 hover:bg-white rounded-2xl transition-all touch-manipulation"><Plus size={16} /></button>
+                                    </div>
+                                    <div className="w-24 text-right">
+                                      <span className="font-black text-sm text-slate-900">Rs. {Number((totals.linePricing[item.line_id]?.final_amount ?? item.total_price) || 0).toFixed(0)}</span>
+                                      {(totals.linePricing[item.line_id]?.line_discount || 0) + (totals.linePricing[item.line_id]?.order_discount_share || 0) > 0 && (
+                                        <p className="text-[10px] font-black text-emerald-600 mt-1">-₹{((totals.linePricing[item.line_id]?.line_discount || 0) + (totals.linePricing[item.line_id]?.order_discount_share || 0)).toFixed(2)}</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+              {/* ========================= */}
+              {/* BILL SUMMARY */}
+              {/* ========================= */}
+
+              <div className="border-t border-slate-200 p-5">
+                <div className="space-y-3 rounded-3xl bg-slate-100 p-5">
+                  <div className="flex items-center justify-between text-sm font-medium text-slate-600">
+                    <span>Subtotal</span>
+                    <span>₹Rs. {totals.subtotal}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-sm font-medium text-slate-600">
+                    <span>GST</span>
+                    <span>₹Rs. {totals.totalTax}</span>
+                  </div>
+
+                  <div className="border-t border-slate-300 pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-lg font-black text-slate-900">
+                        Total
+                      </span>
+
+                      <span className="text-3xl font-black tracking-tight text-slate-900">
+                        ₹Rs. {totals.grandTotal}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ========================= */}
+                {/* ACTION BUTTONS */}
+                {/* ========================= */}
+
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  {/* KEEP OLD HANDLER */}
+                  <button
+                   // onClick={handleHoldOrder}
+                    className="h-14 rounded-3xl border border-slate-300 bg-white text-sm font-black text-slate-700 transition-all hover:bg-slate-100"
+                  >
+                    Hold
+                  </button>
+
+                  {/* KEEP OLD HANDLER */}
+                  <button
+                    onClick={handleFinalizeAndPrint}
+                    className="h-14 rounded-3xl bg-gradient-to-r from-indigo-600 to-violet-600 text-sm font-black text-white shadow-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    Checkout
+                  </button>
+                </div>
+
+                {/* KEEP OLD KOT HANDLER */}
+                <button
+                  onClick={handleKotPrint}
+                  className="mt-3 h-14 w-full rounded-3xl bg-slate-900 text-sm font-black text-white shadow-xl transition-all hover:bg-black"
+                >
+                  Generate KOT
+                </button>
+              </div>
+            </aside>
+
+            
+          </div>
+
+        </main>
+
+      </div>
+
+      {/* ========================= */}
+      {/* KEEP OLD TABLE SELECTOR */}
+      {/* ========================= */}
+
+      <TableSelector
+        isOpen={showTableSelector}
+        onClose={() => setShowTableSelector(false)}
+      />
+    </div>
+  );
+
+
+  {/* PAYMENT MODE PICKER */}
+        {showPaymentPicker && (
+          <div className="fixed inset-0 z-[1500] flex items-center justify-center p-4 bg-slate-900/95 backdrop-blur-md">
+             <div className="bg-white rounded-[56px] w-full max-w-xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-300">
+                <div className="p-10 border-b bg-slate-50/50 flex justify-between items-center shrink-0">
+                   <div><h3 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Payment Mode</h3><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Select settlement channel</p></div>
+                   <button onClick={() => setShowPaymentPicker(false)} className="p-4 bg-white border border-slate-100 rounded-full text-slate-400 hover:text-slate-900 transition-all shadow-sm"><X size={28} /></button>
+                </div>
+                <div className="p-10 grid grid-cols-1 gap-4 overflow-y-auto max-h-[60vh]">
+                   {paymentModes.map(mop => (
+                     <button 
+                       key={mop.id} 
+                       onClick={() => { setSelectedMop(mop); setShowPaymentPicker(false); }} 
+                       className={`flex items-center justify-between p-6 rounded-3xl border-2 transition-all ${selectedMop?.id === mop.id ? 'bg-indigo-50 border-indigo-500 shadow-sm' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
+                     >
+                        <div className="flex items-center gap-4">
+                           <div className={`p-4 rounded-2xl ${selectedMop?.id === mop.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                              {getMopIcon(mop.type)}
+                           </div>
+                           <div className="text-left">
+                              <p className="font-black text-slate-900">{mop.name}</p>
+                              {mop.is_default && <span className="text-[8px] font-black uppercase text-indigo-500 bg-indigo-100 px-2 py-0.5 rounded">Default Mode</span>}
+                           </div>
+                        </div>
+                        {selectedMop?.id === mop.id && <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white"><Check size={18} /></div>}
+                     </button>
+                   ))}
+                </div>
+                <div className="p-10 border-t bg-slate-50/50 flex justify-end">
+                   <button onClick={() => setShowPaymentPicker(false)} className="px-12 py-5 bg-slate-900 text-white rounded-[24px] font-black uppercase tracking-widest text-xs">Dismiss</button>
+                </div>
+             </div>
+          </div>
+        )}
+        
+
+};
+export default  PosScreen;

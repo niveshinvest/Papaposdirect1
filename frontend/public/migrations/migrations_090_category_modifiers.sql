@@ -1,0 +1,15 @@
+-- PAPAPOS MIGRATION 090: CATEGORY-LEVEL MODIFIERS
+-- Target: Supabase / Postgres
+
+-- 1. ADD MODIFIERS COLUMN TO MENU CATEGORIES
+ALTER TABLE public.menu_categories
+ADD COLUMN IF NOT EXISTS modifiers JSONB DEFAULT '[]';
+
+-- 2. ADD FLAG TO MENU ITEMS TO CONTROL INHERITANCE OF CATEGORY MODIFIERS
+ALTER TABLE public.menu_items
+ADD COLUMN IF NOT EXISTS apply_category_modifiers BOOLEAN DEFAULT TRUE;
+
+-- 3. RECORD VERSION
+INSERT INTO public.schema_migrations (version, name)
+VALUES (90, 'category_modifiers_v1')
+ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name;

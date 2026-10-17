@@ -1,0 +1,108 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>PapaPos</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="apple-touch-icon" href="/icons/icon-192.svg">
+    <meta name="theme-color" content="#4f46e5">
+    <link rel="apple-touch-icon" href="https://picsum.photos/192/192">
+   <!-- <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"> 
+    -->
+   <style>
+      /* MANDATORY VISIBILITY OVERRIDE */
+      html, body, #root {
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        background: #ffffff !important;
+        color: #000000 !important;
+        position: relative !important;
+        z-index: 9999 !important;
+      }
+
+      :root {
+        --sat: env(safe-area-inset-top);
+        --sar: env(safe-area-inset-right);
+        --sab: env(safe-area-inset-bottom);
+        --sal: env(safe-area-inset-left);
+      }
+      
+      .pb-safe {
+        padding-bottom: var(--sab);
+      }
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      @keyframes bounce-slow {
+        0%, 100% { transform: translateY(-5%); }
+        50% { transform: translateY(0); }
+      }
+      .animate-bounce-slow {
+        animation: bounce-slow 2s infinite ease-in-out;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Service Worker registration and install prompt handling
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('SW: Registered', reg.scope))
+            .catch(err => console.error('SW: Registration Failed', err));
+        });
+      }
+
+      // Simple Add-to-HomeScreen prompt UI
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+window.deferredPWAInstall = e;       
+ const banner = document.createElement('div');
+        banner.id = 'pwa-install-banner';
+        banner.style.position = 'fixed';
+        banner.style.left = '16px';
+        banner.style.right = '16px';
+        banner.style.bottom = '32px';
+        banner.style.zIndex = '99999';
+        banner.style.display = 'flex';
+        banner.style.justifyContent = 'space-between';
+        banner.style.alignItems = 'center';
+        banner.style.background = 'linear-gradient(90deg,#0ea5e9,#f97316)';
+        banner.style.color = 'white';
+        banner.style.padding = '12px 16px';
+        banner.style.borderRadius = '12px';
+        banner.style.boxShadow = '0 10px 30px rgba(0,0,0,0.2)';
+        banner.innerHTML = '<div style="font-weight:800">Install PapaPos</div><div style="display:flex;gap:8px"><button id="pwa-install-now" style="background:white;color:#111;padding:8px 12px;border-radius:10px;font-weight:700;border:none">Install</button><button id="pwa-install-dismiss" style="background:transparent;color:white;padding:6px;border-radius:10px;border:1px solid rgba(255,255,255,0.2)">Dismiss</button></div>';
+        document.body.appendChild(banner);
+        document.getElementById('pwa-install-now')?.addEventListener('click', async () => {
+          const promptEvent = window.deferredPWAInstall;
+          if (!promptEvent) return;
+          promptEvent.prompt();
+          const choice = await promptEvent.userChoice;
+          console.log('PWA install choice', choice);
+          banner.remove();
+          window.deferredPWAInstall  = null;
+          
+        });
+        document.getElementById('pwa-install-dismiss')?.addEventListener('click', () => {
+          banner.remove();
+        });
+      });
+    </script>
+  <script type="module" src="src/index.tsx"></script>
+</body>
+</html>
